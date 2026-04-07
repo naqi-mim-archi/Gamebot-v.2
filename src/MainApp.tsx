@@ -1,0 +1,1677 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench } from 'lucide-react';
+import { generateGameCode, generateGameCodeStream, getEnhanceQuestions, finalizeEnhancedPrompt, EnhanceQuestion, FileAttachment, FileSystem, bundleForPreview } from './services/geminiService';
+import { saveUserGame } from './services/db';
+import { useNavigate } from 'react-router-dom';
+import TopNav from './components/TopNav';
+import { motion } from 'motion/react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import Editor from '@monaco-editor/react';
+
+type LogEntry = {
+  id: string;
+  text: string;
+  type: 'info' | 'success' | 'error' | 'system' | 'revision' | 'generation-progress';
+  timestamp: Date;
+  snapshot?: FileSystem;
+  files?: { name: string, status: 'generating' | 'success' | 'error', errorMsg?: string }[];
+};
+
+export interface MainAppProps {
+  initialPrompt: string;
+  initialAttachments?: FileAttachment[];
+  loadGame?: any;
+  user: any;
+  userProfile?: any;
+  onRequireAuth: () => void;
+  onLogout: () => void;
+  onGoHome: () => void;
+}
+
+export default function MainApp({ initialPrompt, initialAttachments = [], loadGame, user, userProfile, onRequireAuth, onLogout, onGoHome }: MainAppProps) {
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const navigate = useNavigate();
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [enhanceModal, setEnhanceModal] = useState<'closed' | 'loading' | 'questions' | 'finalizing'>('closed');
+  const [enhanceQuestions, setEnhanceQuestions] = useState<EnhanceQuestion[]>([]);
+  const [enhanceAnswers, setEnhanceAnswers] = useState<Record<string, string>>({});
+  const [isListening, setIsListening] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [attachments, setAttachments] = useState<FileAttachment[]>(initialAttachments);
+  const [files, setFiles] = useState<FileSystem | null>(null);
+  const [deviceView, setDeviceView] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const [leftPanelWidth, setLeftPanelWidth] = useState(33.33);
+  const [logs, setLogs] = useState<LogEntry[]>([
+    { id: '1', text: 'Game Bot initialized. Ready for input.', type: 'system', timestamp: new Date() }
+  ]);
+  const [showOutOfCredits, setShowOutOfCredits] = useState(false);
+  const [attemptedCost, setAttemptedCost] = useState(0);
+  const [activeTab, setActiveTab] = useState<'preview' | 'code' | 'split'>('preview');
+  const [selectedFile, setSelectedFile] = useState<string | null>('index.html');
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['/']));
+  const [menuOpenPath, setMenuOpenPath] = useState<string | null>(null);
+  const [dialogConfig, setDialogConfig] = useState<{
+    type: 'renameFile' | 'moveFile' | 'deleteFile' | 'renameFolder' | 'deleteFolder' | null;
+    path: string;
+    initialValue?: string;
+  }>({ type: null, path: '' });
+  const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
+  const [githubSyncConfig, setGithubSyncConfig] = useState<{
+    isOpen: boolean;
+    token: string;
+    repo: string;
+    isSyncing: boolean;
+    error: string | null;
+    success: boolean;
+    repoUrl: string | null;
+    lastSyncedFiles: Record<string, string> | null;
+  }>({ isOpen: false, token: userProfile?.githubToken || '', repo: '', isSyncing: false, error: null, success: false, repoUrl: null, lastSyncedFiles: null });
+
+  // Sync GitHub token from Firestore when userProfile loads/changes
+  useEffect(() => {
+    if (userProfile?.githubToken) {
+      setGithubSyncConfig(prev => ({ ...prev, token: userProfile.githubToken! }));
+    }
+  }, [userProfile?.githubToken]);
+
+  const tier = userProfile?.tier || 'playground';
+  const canRemoveWatermark = ['studio'].includes(tier);
+  const canEditCode = ['creator', 'pro', 'studio'].includes(tier);
+  const canDownloadZip = ['creator', 'pro', 'studio'].includes(tier);
+  const canExportReact = ['pro', 'studio'].includes(tier);
+  
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const hasRunInitial = useRef(false);
+  const isDraggingResizer = useRef(false);
+  const [terminalStep, setTerminalStep] = useState(0);
+  const terminalSteps = [
+    "Initializing GameBot Engine v2.0...",
+    "Synthesizing core game logic...",
+    "Compiling physics and collision meshes...",
+    "Generating asset placeholders...",
+    "Bundling React components...",
+    "Injecting Tailwind CSS styles...",
+    "Finalizing build artifacts...",
+    "Deploying to local preview environment..."
+  ];
+
+  useEffect(() => {
+    let interval: any;
+    if (isGenerating) {
+      setTerminalStep(0);
+      interval = setInterval(() => {
+        setTerminalStep(prev => Math.min(prev + 1, terminalSteps.length - 1));
+      }, 800);
+    }
+    return () => clearInterval(interval);
+  }, [isGenerating]);
+
+  useEffect(() => {
+    if (loadGame && !hasRunInitial.current) {
+      hasRunInitial.current = true;
+      let loadedFiles = loadGame.files;
+      if (typeof loadedFiles === 'string') {
+        try {
+          loadedFiles = JSON.parse(loadedFiles);
+        } catch (e) {
+          console.error("Failed to parse loaded files", e);
+          loadedFiles = { "index.html": loadedFiles };
+        }
+      }
+      
+      // Normalize if the loaded files is { files: { ... } }
+      if (loadedFiles && loadedFiles.files && typeof loadedFiles.files === 'object' && !Array.isArray(loadedFiles.files)) {
+        loadedFiles = loadedFiles.files;
+      }
+      
+      // Normalize if the loaded files is an array of { name, content } or { path, content }
+      if (Array.isArray(loadedFiles)) {
+        const normalized: FileSystem = {};
+        for (const file of loadedFiles) {
+          if (file.name && file.content) normalized[file.name] = file.content;
+          else if (file.path && file.content) normalized[file.path] = file.content;
+        }
+        loadedFiles = normalized;
+      }
+      
+      // Ensure all values are strings
+      const finalLoadedFiles: FileSystem = {};
+      for (const key in loadedFiles) {
+        if (typeof loadedFiles[key] === 'string') {
+          finalLoadedFiles[key] = loadedFiles[key];
+        } else {
+          finalLoadedFiles[key] = JSON.stringify(loadedFiles[key], null, 2);
+        }
+      }
+      
+      setFiles(finalLoadedFiles);
+      setActiveTab('preview');
+      setPrompt(loadGame.prompt);
+      addLog(`Loaded game: "${loadGame.prompt}"`, 'system');
+    } else if ((initialPrompt || initialAttachments.length > 0) && !hasRunInitial.current) {
+      hasRunInitial.current = true;
+      handleGenerate(initialPrompt, initialAttachments);
+    }
+  }, [initialPrompt, loadGame, initialAttachments]);
+
+  const showOutOfCreditsModal = (cost: number) => {
+    setAttemptedCost(cost);
+    setShowOutOfCredits(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingResizer.current) return;
+      const newWidth = (e.clientX / window.innerWidth) * 100;
+      if (newWidth >= 20 && newWidth <= 80) {
+        setLeftPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (isDraggingResizer.current) {
+        isDraggingResizer.current = false;
+        document.body.style.cursor = 'default';
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const handleMouseDownResizer = () => {
+    isDraggingResizer.current = true;
+    document.body.style.cursor = 'col-resize';
+  };
+
+  const handleFullscreen = () => {
+    if (iframeRef.current) {
+      const elem = iframeRef.current;
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen();
+      } else if ((elem as any).webkitRequestFullscreen) {
+        (elem as any).webkitRequestFullscreen();
+      } else if ((elem as any).webkitEnterFullscreen) {
+        (elem as any).webkitEnterFullscreen();
+      } else {
+        // Fallback for iOS iPhone
+        setIsPseudoFullscreen(true);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+
+      recognitionRef.current.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setPrompt(prev => prev + (prev ? ' ' : '') + finalTranscript);
+        }
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current?.start();
+      setIsListening(true);
+    }
+  };
+
+  const processFiles = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+
+    const newAttachments: FileAttachment[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const reader = new FileReader();
+      
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+      });
+      
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
+      
+      newAttachments.push({
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        data: base64Data
+      });
+    }
+    
+    setAttachments(prev => [...prev, ...newAttachments]);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      await processFiles(e.target.files);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await processFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault(); // Prevent default paste if it's a file
+      await processFiles(e.clipboardData.files);
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleEnhancePrompt = async () => {
+    if (!prompt.trim()) return;
+    setEnhanceAnswers({});
+    setEnhanceModal('loading');
+    try {
+      const questions = await getEnhanceQuestions(prompt);
+      setEnhanceQuestions(questions);
+      setEnhanceModal('questions');
+    } catch (error) {
+      console.error(error);
+      setEnhanceModal('closed');
+      addLog(`Failed to generate questions: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+    }
+  };
+
+  const handleEnhanceFinalize = async () => {
+    setEnhanceModal('finalizing');
+    try {
+      const answersMap: Record<string, string> = {};
+      enhanceQuestions.forEach(q => {
+        if (enhanceAnswers[q.id]) answersMap[q.question] = enhanceAnswers[q.id];
+      });
+      const enhanced = await finalizeEnhancedPrompt(prompt, answersMap);
+      setPrompt(enhanced);
+      setEnhanceModal('closed');
+      addLog('Prompt enhanced successfully.', 'success');
+    } catch (error) {
+      console.error(error);
+      setEnhanceModal('closed');
+      addLog(`Failed to enhance prompt: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+    }
+  };
+
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs]);
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (menuOpenPath) {
+        setMenuOpenPath(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [menuOpenPath]);
+
+  const addLog = useCallback((text: string, type: LogEntry['type'] = 'info', snapshot?: FileSystem) => {
+    setLogs(prev => [...prev, { id: Math.random().toString(36).substring(7), text, type, timestamp: new Date(), snapshot }]);
+  }, []);
+
+  const handleGenerate = async (promptToUse = prompt, attachmentsToUse = attachments) => {
+    if (!promptToUse.trim() && attachmentsToUse.length === 0) return;
+
+    const isNewGame = !files || Object.keys(files).length === 0;
+    const cost = isNewGame ? 5 : 1;
+
+    setIsGenerating(true);
+    addLog(`User prompt: "${promptToUse}"`, 'system');
+    if (attachmentsToUse.length > 0) {
+      addLog(`Attached ${attachmentsToUse.length} file(s)`, 'system');
+    }
+    
+    const logId = Math.random().toString(36).substring(7);
+    setLogs(prev => [...prev, { 
+      id: logId, 
+      text: 'Thinking & Generating...', 
+      type: 'generation-progress', 
+      timestamp: new Date(),
+      files: []
+    }]);
+    
+    try {
+      if (!user) {
+  onRequireAuth(); // opens login
+  addLog('Please login first', 'error');
+  setIsGenerating(false);
+  return;
+}
+
+// force refresh
+      const stream = generateGameCodeStream(promptToUse, files || undefined, attachmentsToUse);
+      let finalFiles: FileSystem | null = null;
+
+      try {
+        for await (const chunk of stream) {
+          if (typeof chunk === 'string') {
+            const matches = [...chunk.matchAll(/"([a-zA-Z0-9_./-]+)"\s*:/g)];
+            const fileNames = matches.map(m => m[1]).filter(name => name !== 'files');
+            
+            setLogs(prev => prev.map(log => {
+              if (log.id === logId) {
+                const currentFiles = log.files || [];
+                const newFiles = [...currentFiles];
+                
+                fileNames.forEach(name => {
+                  if (!newFiles.find(f => f.name === name)) {
+                    newFiles.push({ name, status: 'generating' });
+                  }
+                });
+                
+                return { ...log, files: newFiles };
+              }
+              return log;
+            }));
+          } else {
+            finalFiles = chunk;
+          }
+        }
+      } catch (streamError: any) {
+        if (streamError?.message === 'INSUFFICIENT_CREDITS') throw streamError;
+        console.warn("Streaming failed, falling back to non-streaming...", streamError);
+        setLogs(prev => prev.map(log => log.id === logId ? { ...log, text: 'Streaming failed, falling back to standard generation...' } : log));
+        finalFiles = await generateGameCode(promptToUse, files || undefined, attachmentsToUse);
+      }
+      
+      if (!finalFiles) throw new Error("No files generated");
+
+      const finalFilesWithStatus = Object.keys(finalFiles).map(name => {
+        let status: 'success' | 'error' = 'success';
+        let errorMsg = undefined;
+        const content = finalFiles![name];
+        
+        if (!content || content.trim() === '') {
+          status = 'error';
+          errorMsg = 'File is empty';
+        } else if (name.endsWith('.js')) {
+          try {
+            new Function(content);
+          } catch (e: any) {
+            if (e instanceof SyntaxError && !e.message.includes('import') && !e.message.includes('export')) {
+              status = 'error';
+              errorMsg = e.message;
+            }
+          }
+        }
+        return { name, status, errorMsg };
+      });
+
+      setLogs(prev => prev.map(log => {
+        if (log.id === logId) {
+          return { ...log, text: 'Generation complete.', files: finalFilesWithStatus };
+        }
+        return log;
+      }));
+      
+      setFiles(finalFiles);
+      setActiveTab('preview');
+
+      if (user) {
+        try {
+          await saveUserGame(user.uid, promptToUse, finalFiles);
+          addLog('Game saved to your dashboard.', 'system');
+        } catch (e) {
+          console.error("Failed to save game", e);
+        }
+      }
+
+      addLog(`AI Revision: "${promptToUse}"`, 'revision', finalFiles);
+      addLog('Game generated successfully!', 'success');
+      setPrompt('');
+      setAttachments([]);
+    } catch (error: any) {
+      if (error?.message === 'INSUFFICIENT_CREDITS') {
+        showOutOfCreditsModal(cost);
+        setLogs(prev => prev.map(log => log.id === logId ? { ...log, text: 'Insufficient credits.' } : log));
+      } else {
+        console.error(error);
+        setLogs(prev => prev.map(log => log.id === logId ? { ...log, text: 'Generation failed.' } : log));
+        addLog(`Generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleGenerate();
+    }
+  };
+
+  const handleRefreshIframe = () => {
+    if (iframeRef.current && files) {
+      iframeRef.current.srcdoc = bundleForPreview(files);
+      addLog('Preview refreshed.', 'info');
+    }
+  };
+
+  const handleRollback = (snapshot: FileSystem) => {
+    setFiles(snapshot);
+    addLog('Rolled back to previous revision.', 'system');
+  };
+
+  const toggleFolder = (folderPath: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) {
+        next.delete(folderPath);
+      } else {
+        next.add(folderPath);
+      }
+      return next;
+    });
+  };
+
+  const handleRenameFile = (oldPath: string) => {
+    setDialogConfig({ type: 'renameFile', path: oldPath, initialValue: oldPath.split('/').pop() });
+    setMenuOpenPath(null);
+  };
+
+  const handleMoveFile = (oldPath: string) => {
+    setDialogConfig({ type: 'moveFile', path: oldPath, initialValue: oldPath });
+    setMenuOpenPath(null);
+  };
+
+  const handleDeleteFile = (path: string) => {
+    setDialogConfig({ type: 'deleteFile', path });
+    setMenuOpenPath(null);
+  };
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GITHUB_AUTH_SUCCESS' && event.data.token) {
+        const githubToken = event.data.token;
+        setGithubSyncConfig(prev => ({ ...prev, token: githubToken, error: null }));
+        // Persist token to Firestore via server (Admin SDK bypasses security rules)
+        if (user) {
+          user.getIdToken().then(idToken => {
+            fetch('/api/auth/github/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+              body: JSON.stringify({ githubToken }),
+            }).catch(err => console.error('Failed to save GitHub token:', err));
+          });
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handleLinkGithub = async () => {
+    try {
+      const response = await fetch('/api/auth/github/url');
+      if (!response.ok) throw new Error('Failed to get auth URL');
+      const { url } = await response.json();
+      
+      const authWindow = window.open(
+        url,
+        'oauth_popup',
+        'width=600,height=700'
+      );
+      
+      if (!authWindow) {
+        alert('Please allow popups for this site to connect your account.');
+      }
+    } catch (error) {
+      console.error('OAuth error:', error);
+      setGithubSyncConfig(prev => ({ ...prev, error: 'Failed to initiate GitHub login' }));
+    }
+  };
+
+  const getFilesToSync = () => {
+    if (!files) return {};
+    if (!githubSyncConfig.lastSyncedFiles) return files;
+    
+    const toSync: Record<string, string | null> = {};
+    for (const [path, content] of Object.entries(files)) {
+      if (githubSyncConfig.lastSyncedFiles[path] !== content) {
+        toSync[path] = content as string;
+      }
+    }
+    for (const path of Object.keys(githubSyncConfig.lastSyncedFiles)) {
+      if (!(path in files)) {
+        toSync[path] = null;
+      }
+    }
+    return toSync;
+  };
+
+  const handleGithubSync = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!files) return;
+    
+    const { token, repo } = githubSyncConfig;
+    if (!token || !repo) return;
+    
+    if (!/^[a-zA-Z0-9_.-]+$/.test(repo)) {
+      setGithubSyncConfig(prev => ({ ...prev, error: 'Invalid repository name format.' }));
+      return;
+    }
+    
+    const filesToSync = getFilesToSync();
+    if (Object.keys(filesToSync).length === 0) return;
+    
+    setGithubSyncConfig(prev => ({ ...prev, isSyncing: true, error: null, success: false }));
+    
+    try {
+      const response = await fetch('/api/github/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          token,
+          repoName: repo,
+          files: filesToSync,
+          description: 'Generated by GameBot'
+        })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to sync to GitHub');
+      
+      setGithubSyncConfig(prev => ({ 
+        ...prev, 
+        isSyncing: false, 
+        success: true,
+        repoUrl: data.url,
+        lastSyncedFiles: { ...files }
+      }));
+      
+    } catch (error) {
+      setGithubSyncConfig(prev => ({ ...prev, isSyncing: false, error: error instanceof Error ? error.message : 'Unknown error' }));
+    }
+  };
+
+  const handleDownloadZip = async () => {
+    if (!files) return;
+    
+    const zip = new JSZip();
+    Object.entries(files).forEach(([path, content]) => {
+      zip.file(path, content as string);
+    });
+    
+    const blob = await zip.generateAsync({ type: 'blob' });
+    saveAs(blob, 'project.zip');
+  };
+
+  const handleCopyFile = async (path: string) => {
+    if (!files || !files[path]) return;
+    try {
+      await navigator.clipboard.writeText(files[path] as string);
+      // Could add a toast here
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  const handleExportReact = async () => {
+    if (!canExportReact) {
+      alert('React/PWA Export is available on Pro and Studio tiers.');
+      return;
+    }
+    alert('React/PWA Export feature is coming soon!');
+  };
+
+  const handleDownloadFile = (path: string) => {
+    if (!files || !files[path]) return;
+    
+    const blob = new Blob([files[path]], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = path.split('/').pop() || 'file.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setMenuOpenPath(null);
+  };
+
+  const handleRenameFolder = (oldPath: string) => {
+    setDialogConfig({ type: 'renameFolder', path: oldPath, initialValue: oldPath.split('/').pop() });
+    setMenuOpenPath(null);
+  };
+
+  const handleDeleteFolder = (path: string) => {
+    setDialogConfig({ type: 'deleteFolder', path });
+    setMenuOpenPath(null);
+  };
+
+  const executeDialogAction = (newValue?: string) => {
+    if (!files || !dialogConfig.type) return;
+    
+    const { type, path } = dialogConfig;
+    const newFiles = { ...files };
+    
+    if (type === 'renameFile' && newValue) {
+      const parts = path.split('/');
+      parts[parts.length - 1] = newValue;
+      const newPath = parts.join('/');
+      
+      if (newPath === path) {
+        setDialogConfig({ type: null, path: '' });
+        return;
+      }
+      
+      if (newFiles[newPath]) {
+        // File exists, just close dialog
+        setDialogConfig({ type: null, path: '' });
+        return;
+      }
+      
+      newFiles[newPath] = newFiles[path];
+      delete newFiles[path];
+      if (selectedFile === path) setSelectedFile(newPath);
+      setFiles(newFiles);
+    } else if (type === 'moveFile' && newValue) {
+      if (newValue === path) {
+        setDialogConfig({ type: null, path: '' });
+        return;
+      }
+
+      if (newFiles[newValue]) {
+        // File exists, just close dialog
+        setDialogConfig({ type: null, path: '' });
+        return;
+      }
+      
+      newFiles[newValue] = newFiles[path];
+      delete newFiles[path];
+      if (selectedFile === path) setSelectedFile(newValue);
+      setFiles(newFiles);
+    } else if (type === 'deleteFile') {
+      delete newFiles[path];
+      if (selectedFile === path) setSelectedFile(null);
+      setFiles(newFiles);
+    } else if (type === 'renameFolder' && newValue) {
+      const parts = path.split('/');
+      parts[parts.length - 1] = newValue;
+      const newPath = parts.join('/');
+      
+      if (newPath === path) {
+        setDialogConfig({ type: null, path: '' });
+        return;
+      }
+      
+      let changed = false;
+      const prefix = path.replace(/^\//, '') + '/';
+      const newPrefix = newPath.replace(/^\//, '') + '/';
+      
+      Object.keys(newFiles).forEach(filePath => {
+        if (filePath.startsWith(prefix)) {
+          const newFilePath = newPrefix + filePath.substring(prefix.length);
+          newFiles[newFilePath] = newFiles[filePath];
+          delete newFiles[filePath];
+          changed = true;
+          if (selectedFile === filePath) setSelectedFile(newFilePath);
+        }
+      });
+      
+      if (changed) setFiles(newFiles);
+    } else if (type === 'deleteFolder') {
+      let changed = false;
+      const prefix = path.replace(/^\//, '') + '/';
+      
+      Object.keys(newFiles).forEach(filePath => {
+        if (filePath.startsWith(prefix)) {
+          delete newFiles[filePath];
+          changed = true;
+          if (selectedFile === filePath) setSelectedFile(null);
+        }
+      });
+      
+      if (changed) setFiles(newFiles);
+    }
+    
+    setDialogConfig({ type: null, path: '' });
+  };
+
+  const renderFileTree = () => {
+    if (!files) return null;
+
+    // Build a simple tree structure
+    const tree: any = { type: 'folder', name: 'root', path: '/', children: {} };
+    
+    Object.keys(files).forEach(filePath => {
+      const parts = filePath.split('/');
+      let current = tree;
+      let currentPath = '';
+      
+      parts.forEach((part, i) => {
+        currentPath += (currentPath === '/' ? '' : '/') + part;
+        if (i === parts.length - 1) {
+          current.children[part] = { type: 'file', name: part, path: filePath };
+        } else {
+          if (!current.children[part]) {
+            current.children[part] = { type: 'folder', name: part, path: currentPath, children: {} };
+          }
+          current = current.children[part];
+        }
+      });
+    });
+
+    const renderNode = (node: any, depth = 0): React.ReactNode => {
+      if (node.type === 'file') {
+        const isSelected = selectedFile === node.path;
+        const isMenuOpen = menuOpenPath === node.path;
+        return (
+          <div 
+            key={node.path}
+            className={`group relative flex items-center justify-between py-1 px-2 cursor-pointer text-sm transition-colors ${isSelected ? 'bg-emerald-500/10 text-emerald-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`}
+            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          >
+            <div className="flex items-center gap-2 overflow-hidden flex-1" onClick={() => setSelectedFile(node.path)}>
+              <FileIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{node.name}</span>
+            </div>
+            
+            <div className="relative shrink-0">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setMenuOpenPath(isMenuOpen ? null : node.path); }}
+                className={`p-1 rounded hover:bg-white/10 ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+              >
+                <MoreVertical className="w-3.5 h-3.5" />
+              </button>
+              
+              {isMenuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-36 bg-zinc-900 border border-white/10 rounded shadow-lg z-50 py-1" onClick={e => e.stopPropagation()}>
+                  <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-zinc-300" onClick={() => { setSelectedFile(node.path); setMenuOpenPath(null); }}>Show in Editor</button>
+                  {canEditCode && (
+                    <>
+                      <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-zinc-300" onClick={() => handleRenameFile(node.path)}>Rename</button>
+                      <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-zinc-300" onClick={() => handleMoveFile(node.path)}>Move</button>
+                      <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-red-400" onClick={() => handleDeleteFile(node.path)}>Delete</button>
+                    </>
+                  )}
+                  <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-zinc-300" onClick={() => { handleCopyFile(node.path); setMenuOpenPath(null); }}>Copy</button>
+                  <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-zinc-300" onClick={() => handleDownloadFile(node.path)}>Download</button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // Root folder doesn't render itself, just its children
+      if (node.path === '/') {
+        return Object.values(node.children)
+          .sort((a: any, b: any) => {
+            // Folders first
+            if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          })
+          .map((child: any) => renderNode(child, depth));
+      }
+
+      const isExpanded = expandedFolders.has(node.path);
+      const isMenuOpen = menuOpenPath === node.path;
+      
+      return (
+        <div key={node.path}>
+          <div 
+            className="group relative flex items-center justify-between py-1 px-2 cursor-pointer text-sm text-zinc-300 hover:bg-white/5 transition-colors"
+            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          >
+            <div className="flex items-center gap-1.5 overflow-hidden flex-1" onClick={() => toggleFolder(node.path)}>
+              {isExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-zinc-500" />}
+              <Folder className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+              <span className="truncate">{node.name}</span>
+            </div>
+            
+            {canEditCode && (
+              <div className="relative shrink-0">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setMenuOpenPath(isMenuOpen ? null : node.path); }}
+                  className={`p-1 rounded hover:bg-white/10 ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                >
+                  <MoreVertical className="w-3.5 h-3.5" />
+                </button>
+                
+                {isMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-white/10 rounded shadow-lg z-50 py-1" onClick={e => e.stopPropagation()}>
+                    <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-zinc-300" onClick={() => handleRenameFolder(node.path)}>Rename</button>
+                    <button className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-red-400" onClick={() => handleDeleteFolder(node.path)}>Delete</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          {isExpanded && (
+            <div>
+              {Object.values(node.children)
+                .sort((a: any, b: any) => {
+                  if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+                  return a.name.localeCompare(b.name);
+                })
+                .map((child: any) => renderNode(child, depth + 1))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return renderNode(tree);
+  };
+
+  return (
+    <div 
+      className="min-h-screen bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
+      style={{ '--left-width': `${leftPanelWidth}%` } as React.CSSProperties}
+    >
+      <TopNav 
+        user={user} 
+        userProfile={userProfile} 
+        onLogin={onRequireAuth} 
+        onLogout={onLogout} 
+      />
+
+      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+        {/* Left Panel: Controls & Logs */}
+        <div className="w-full md:w-[var(--left-width)] border-r border-white/5 flex flex-col h-full shrink-0 bg-zinc-950/50 backdrop-blur-xl">
+          {/* Terminal / Logs */}
+        <div className="flex-1 p-4 overflow-y-auto bg-zinc-950 font-mono text-xs flex flex-col gap-2">
+          {logs.map((log) => (
+            <div key={log.id} className="flex flex-col gap-1">
+              <div className="flex gap-2 items-start">
+                <span className="text-zinc-600 shrink-0 mt-0.5">
+                  [{log.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]
+                </span>
+                <span className="text-zinc-600 shrink-0 mt-0.5">{'>'}</span>
+                <span className={`flex-1 ${
+                  log.type === 'error' ? 'text-red-400' :
+                  log.type === 'success' ? 'text-emerald-400' :
+                  log.type === 'system' ? 'text-zinc-300' :
+                  log.type === 'revision' ? 'text-blue-400 font-semibold' :
+                  log.type === 'generation-progress' ? 'text-emerald-400 font-semibold' :
+                  'text-zinc-500'
+                }`}>
+                  {log.text}
+                </span>
+                {log.type === 'revision' && log.snapshot && (
+                  <button
+                    onClick={() => handleRollback(log.snapshot!)}
+                    className="shrink-0 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded transition-colors"
+                    title="Rollback to this version"
+                  >
+                    Rollback
+                  </button>
+                )}
+              </div>
+              {log.type === 'generation-progress' && log.files && log.files.length > 0 && (
+                <div className="flex flex-col gap-1.5 w-full mt-1 pl-16 pr-2">
+                  {log.files.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between bg-zinc-900/50 p-2 rounded border border-white/5">
+                      <div className="flex items-center gap-2">
+                        {f.status === 'generating' && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />}
+                        {f.status === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+                        {f.status === 'error' && <XCircle className="w-3.5 h-3.5 text-red-500" />}
+                        <span className="text-zinc-300 font-mono text-xs">{f.name}</span>
+                      </div>
+                      {f.status === 'error' && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-red-400 text-[10px] truncate max-w-[150px]" title={f.errorMsg}>{f.errorMsg}</span>
+                          <button 
+                            onClick={() => handleGenerate(`Fix the syntax error in ${f.name}: ${f.errorMsg}`)}
+                            className="flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2 py-1 rounded text-[10px] transition-colors border border-red-500/20"
+                          >
+                            <Wrench className="w-3 h-3" />
+                            Auto-Fix
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          <div ref={logsEndRef} />
+        </div>
+
+          {/* Prompt Input */}
+          <div className="p-4 border-t border-white/5 bg-zinc-950/80 flex flex-col gap-2">
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {attachments.map((file, index) => (
+                  <div key={index} className="flex items-center gap-2 bg-zinc-900 text-zinc-300 text-xs px-2 py-1 rounded-md border border-white/10">
+                    <FileText className="w-3 h-3 text-emerald-400" />
+                    <span className="truncate max-w-[120px]">{file.name}</span>
+                    <button onClick={() => removeAttachment(index)} className="hover:text-red-400 ml-1">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div 
+              className={`relative rounded-2xl transition-all duration-300 ${isDragging ? 'ring-2 ring-emerald-500 bg-emerald-500/10' : 'glass-panel focus-within:glass-panel-active'}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <textarea
+                value={prompt}
+                onChange={(e) => { setPrompt(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 320) + 'px'; }}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder={files ? "Refine the vibe (e.g., 'make it faster', 'add gravity')..." : "Describe your game vibe... (Drag & drop or paste files here)"}
+                className="w-full bg-transparent border-0 rounded-2xl p-4 pb-14 text-sm resize-none focus:outline-none focus:ring-0 transition-all placeholder:text-zinc-600 text-white font-display overflow-y-auto"
+                style={{ minHeight: '9rem', maxHeight: '20rem' }}
+                disabled={isGenerating || isEnhancing}
+              />
+              
+              <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                <input 
+                  type="file" 
+                  multiple 
+                  ref={fileInputRef} 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isGenerating || isEnhancing}
+                  className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors disabled:opacity-50"
+                  title="Attach Files"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                
+                <button
+                  onClick={toggleListening}
+                  disabled={isGenerating || isEnhancing}
+                  className={`p-1.5 rounded-xl transition-colors disabled:opacity-50 ${isListening ? 'text-red-400 bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'text-zinc-400 hover:text-white hover:bg-white/10'}`}
+                  title={isListening ? "Stop Listening" : "Voice Input"}
+                >
+                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
+                
+                <button
+                  onClick={handleEnhancePrompt}
+                  disabled={isGenerating || enhanceModal !== 'closed' || !prompt.trim()}
+                  className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1"
+                  title="Enhance Prompt"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Enhance</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => handleGenerate(prompt)}
+                disabled={isGenerating || (!prompt.trim() && attachments.length === 0)}
+                className="absolute bottom-3 right-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+              >
+                {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                  <>
+                    <span className="hidden sm:inline">Generate</span>
+                    <Send className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="flex justify-between items-center px-2 mt-1">
+              <p className="text-[10px] text-zinc-500 font-mono">
+                Press <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-zinc-400">⌘↵</kbd> or <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-zinc-400">Ctrl+↵</kbd> to generate
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Resizer */}
+        <div 
+          className="hidden md:block w-1 bg-white/5 hover:bg-emerald-500/50 cursor-col-resize shrink-0 transition-colors z-10"
+          onMouseDown={handleMouseDownResizer}
+        />
+
+        {/* Right Panel: Preview & Code */}
+        <div className="w-full md:flex-1 flex flex-col h-full bg-[#050505] min-w-0 relative">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 sm:px-4 py-2 sm:py-0 h-auto sm:h-14 border-b border-white/5 bg-zinc-950/80 backdrop-blur-md z-10 gap-2">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar shrink-0">
+            <button
+              onClick={() => setActiveTab('preview')}
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-md flex items-center gap-2 transition-colors shrink-0 ${activeTab === 'preview' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
+            >
+              <Play className="w-4 h-4" />
+              <span className="hidden xs:inline">Preview</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('code')}
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-md flex items-center gap-2 transition-colors shrink-0 ${activeTab === 'code' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
+            >
+              <Terminal className="w-4 h-4" />
+              <span className="hidden xs:inline">Code</span>
+            </button>
+          </div>
+          
+          {files && (
+            <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+              <div className="flex bg-zinc-900 rounded-md p-1 border border-zinc-800 shrink-0">
+                <button
+                  onClick={() => setDeviceView('desktop')}
+                  className={`p-1.5 rounded-sm transition-colors ${deviceView === 'desktop' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title="Desktop View"
+                >
+                  <Monitor className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setDeviceView('tablet')}
+                  className={`p-1.5 rounded-sm transition-colors ${deviceView === 'tablet' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title="Tablet View"
+                >
+                  <Tablet className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setDeviceView('mobile')}
+                  className={`p-1.5 rounded-sm transition-colors ${deviceView === 'mobile' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title="Mobile View"
+                >
+                  <Smartphone className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="block w-px h-6 bg-zinc-800 mx-1 shrink-0"></div>
+              <button 
+                onClick={handleRefreshIframe}
+                className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
+                title="Restart Game"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={handleFullscreen}
+                className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
+                title="Fullscreen"
+              >
+                <Maximize className="w-4 h-4" />
+              </button>
+              <div className="w-px h-6 bg-zinc-800 mx-0.5 sm:mx-1 shrink-0"></div>
+              <button 
+                onClick={() => setGithubSyncConfig(prev => ({ ...prev, isOpen: true }))}
+                className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
+                title="Sync to GitHub"
+              >
+                <Github className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => canDownloadZip ? handleDownloadZip() : alert('Download ZIP is available on Creator, Pro, and Studio tiers.')}
+                className={`p-2 rounded-md transition-colors shrink-0 ${canDownloadZip ? 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800' : 'text-zinc-600 cursor-not-allowed'}`}
+                title={canDownloadZip ? "Download ZIP" : "Download ZIP (Upgrade Required)"}
+              >
+                <Download className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 relative overflow-hidden bg-[#050505]">
+          {!files && !isGenerating && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500">
+              <Sparkles className="w-12 h-12 mb-4 opacity-20" />
+              <p>Describe a vibe to start generating.</p>
+            </div>
+          )}
+          
+          {isGenerating && !files && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#050505] z-20">
+              <div className="w-full max-w-md p-8 glass-panel rounded-2xl border border-emerald-500/20 shadow-[0_0_50px_rgba(16,185,129,0.1)]">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/30">
+                    <Terminal className="w-6 h-6 text-emerald-400 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-display font-bold text-white">Compiling Reality</h3>
+                    <p className="text-xs text-zinc-400 font-mono">Engine v2.0 Active</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-3 font-mono text-xs">
+                  {terminalSteps.map((step, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`flex items-center gap-2 transition-all duration-300 ${idx === terminalStep ? 'text-emerald-400 opacity-100' : idx < terminalStep ? 'text-zinc-500 opacity-50' : 'opacity-0 hidden'}`}
+                    >
+                      <span className="shrink-0">{idx < terminalStep ? '✓' : '>'}</span>
+                      <span>{step}</span>
+                      {idx === terminalStep && <span className="w-1.5 h-3 bg-emerald-400 animate-pulse inline-block ml-1" />}
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="mt-8 h-1 w-full bg-zinc-900 rounded-full overflow-hidden">
+                  <motion.div 
+                    className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500"
+                    initial={{ width: "0%" }}
+                    animate={{ width: `${((terminalStep + 1) / terminalSteps.length) * 100}%` }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {files && activeTab === 'preview' && (
+            <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
+              <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none"></div>
+              <div 
+                className={`bg-white transition-all duration-300 ease-in-out shrink-0 relative z-10 ${
+                  isPseudoFullscreen ? 'fixed inset-0 w-screen h-screen z-[100] border-0 rounded-none' :
+                  deviceView === 'desktop' ? 'w-[1280px] h-[720px] shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-lg overflow-hidden border-[12px] border-b-[24px] border-zinc-900' : 
+                  deviceView === 'tablet' ? 'w-[768px] h-[1024px] shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-xl overflow-hidden border border-white/10' : 
+                  'w-[375px] h-[812px] shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-[2.5rem] overflow-hidden border-[12px] border-zinc-900'
+                }`}
+              >
+                {isPseudoFullscreen && (
+                  <button 
+                    onClick={() => setIsPseudoFullscreen(false)}
+                    className="absolute top-4 right-4 z-[101] bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"
+                    title="Exit Fullscreen"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                )}
+                <iframe
+                  key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
+                  ref={iframeRef}
+                  srcDoc={bundleForPreview(files)}
+                  className="w-full h-full border-0 bg-white block"
+                  style={{ backgroundColor: 'white' }}
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
+                  allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
+                  allowFullScreen
+                  title="Game Preview"
+                />
+                {!canRemoveWatermark && !isPseudoFullscreen && (
+                  <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    Created with Game Bot
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {files && activeTab === 'code' && (
+            <div className="w-full h-full flex bg-[#0a0a0a]">
+              {/* File Explorer Sidebar */}
+              <div className="w-64 border-r border-white/5 bg-zinc-950/50 flex flex-col shrink-0">
+                <div className="h-10 border-b border-white/5 flex items-center px-4 shrink-0">
+                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Explorer</span>
+                </div>
+                <div className="flex-1 overflow-y-auto py-2">
+                  {renderFileTree()}
+                </div>
+              </div>
+
+              {/* Code Editor Area */}
+              <div className="flex-1 flex flex-col min-w-0 bg-[#0d0d0d]">
+                {selectedFile ? (
+                  <>
+                    <div className="h-10 border-b border-white/5 bg-zinc-950 flex items-center justify-between px-4 shrink-0 shadow-sm z-10">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono text-emerald-400 flex items-center gap-2">
+                          <FileIcon className="w-3.5 h-3.5" />
+                          {selectedFile}
+                        </span>
+                        {!canEditCode && (
+                          <span className="text-[10px] font-medium bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full border border-zinc-700">
+                            Read-only (Upgrade to edit)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleCopyFile(selectedFile)}
+                          className="p-1.5 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors"
+                          title="Copy File Content"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDownloadFile(selectedFile)}
+                          className="p-1.5 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors"
+                          title="Download File"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <Editor
+                        height="100%"
+                        language={selectedFile.endsWith('.css') ? 'css' : selectedFile.endsWith('.html') ? 'html' : selectedFile.endsWith('.json') ? 'json' : 'javascript'}
+                        theme="vs-dark"
+                        value={files[selectedFile]}
+                        onChange={(value) => {
+                          if (value !== undefined) {
+                            setFiles(prev => prev ? { ...prev, [selectedFile]: value } : prev);
+                          }
+                        }}
+                        options={{
+                          readOnly: !canEditCode,
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          wordWrap: 'on',
+                          scrollBeyondLastLine: false,
+                          padding: { top: 16, bottom: 16 }
+                        }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">
+                    Select a file to view its contents
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+        </div>
+      </div>
+    </div>
+
+      {/* Out of Credits Modal */}
+      {showOutOfCredits && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="glass-panel rounded-3xl w-full max-w-md p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] text-center relative overflow-hidden"
+          >
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-orange-500"></div>
+            <div className="w-20 h-20 bg-red-500/10 text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.2)]">
+              <CreditCard className="w-10 h-10" />
+            </div>
+            <h2 className="text-2xl font-display font-bold text-white mb-3">Out of Credits</h2>
+            <p className="text-zinc-400 mb-8 leading-relaxed">
+              You need <span className="text-white font-bold">{attemptedCost} credits</span> for this action, but you only have <span className="text-white font-bold">{userProfile?.credits ?? 0}</span>.
+            </p>
+            <div className="flex gap-4">
+              <button onClick={() => setShowOutOfCredits(false)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-medium transition-colors border border-white/10">
+                Cancel
+              </button>
+              <button onClick={() => { setShowOutOfCredits(false); navigate('/pricing'); }} className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-colors shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                Upgrade Now
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* GitHub Sync Dialog */}
+      {githubSyncConfig.isOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl"
+          >
+            <div className="flex items-center gap-3 text-white mb-6">
+              <Github className="w-6 h-6" />
+              <h3 className="text-lg font-semibold">Sync to GitHub</h3>
+            </div>
+            
+            {githubSyncConfig.success ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <h4 className="text-xl font-medium text-white mb-2">Successfully Synced!</h4>
+                <p className="text-zinc-400 text-sm mb-6">Your project has been pushed to GitHub.</p>
+                {githubSyncConfig.repoUrl && (
+                  <a href={githubSyncConfig.repoUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors mb-4">
+                    <Github className="w-4 h-4" />
+                    View Repository
+                  </a>
+                )}
+                <button 
+                  onClick={() => setGithubSyncConfig(prev => ({ ...prev, isOpen: false, success: false }))}
+                  className="block w-full py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleGithubSync}>
+                <div className="space-y-4 mb-6">
+                  {githubSyncConfig.token ? (
+                    (() => {
+                      const isValidRepoName = githubSyncConfig.repo.length === 0 || /^[a-zA-Z0-9_.-]+$/.test(githubSyncConfig.repo);
+                      const filesToSync = getFilesToSync();
+                      const hasChanges = Object.keys(filesToSync).length > 0;
+                      
+                      return (
+                        <>
+                          <div>
+                            <label className="block text-xs font-medium text-zinc-400 mb-1">Repository Name</label>
+                            <input 
+                              type="text"
+                              required
+                              disabled={!!githubSyncConfig.lastSyncedFiles}
+                              value={githubSyncConfig.repo}
+                              onChange={e => setGithubSyncConfig(prev => ({ ...prev, repo: e.target.value }))}
+                              className={`w-full bg-black/50 border ${!isValidRepoName ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : 'border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/50'} rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 transition-all font-mono disabled:opacity-50 disabled:cursor-not-allowed`}
+                              placeholder="my-awesome-game"
+                            />
+                            {!isValidRepoName ? (
+                              <p className="text-[10px] text-red-400 mt-1">Repository names can only contain alphanumeric characters, hyphens, and underscores.</p>
+                            ) : (
+                              <p className="text-[10px] text-zinc-500 mt-1">Will be created if it doesn't exist.</p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-zinc-400 mb-1">Files to Sync</label>
+                            <div className="max-h-40 overflow-y-auto bg-black/50 border border-white/10 rounded-lg p-2">
+                              {hasChanges ? (
+                                Object.entries(filesToSync).map(([path, content]) => (
+                                  <div key={path} className="flex items-center gap-2 text-xs text-zinc-300 py-1">
+                                    <FileIcon className="w-3 h-3 text-zinc-500" />
+                                    <span className={content === null ? 'line-through text-red-400' : ''}>{path}</span>
+                                    {content === null && <span className="text-[10px] text-red-400 ml-auto">Deleted</span>}
+                                    {content !== null && githubSyncConfig.lastSyncedFiles && <span className="text-[10px] text-emerald-400 ml-auto">Modified</span>}
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-center py-4 text-xs text-zinc-500">No changes since last sync.</div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <div className="text-center py-6">
+                      <p className="text-sm text-zinc-400 mb-4">Link your GitHub account to sync your project.</p>
+                      <button
+                        type="button"
+                        onClick={handleLinkGithub}
+                        className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-zinc-200 transition-colors flex items-center gap-2 mx-auto"
+                      >
+                        <Github className="w-4 h-4" />
+                        Link GitHub Account
+                      </button>
+                    </div>
+                  )}
+                </div>
+                
+                {githubSyncConfig.error && (
+                  <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2 text-red-400 text-sm">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <p>{githubSyncConfig.error}</p>
+                  </div>
+                )}
+                
+                <div className="flex gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setGithubSyncConfig(prev => ({ ...prev, isOpen: false }))}
+                    className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  {githubSyncConfig.token && (
+                    (() => {
+                      const isValidRepoName = githubSyncConfig.repo.length > 0 && /^[a-zA-Z0-9_.-]+$/.test(githubSyncConfig.repo);
+                      const filesToSync = getFilesToSync();
+                      const hasChanges = Object.keys(filesToSync).length > 0;
+                      
+                      return (
+                        <button 
+                          type="submit"
+                          disabled={githubSyncConfig.isSyncing || !isValidRepoName || !hasChanges}
+                          className="flex-1 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors border border-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {githubSyncConfig.isSyncing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Syncing...
+                            </>
+                          ) : !hasChanges ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4" />
+                              Up to date
+                            </>
+                          ) : (
+                            <>
+                              <Github className="w-4 h-4" />
+                              Sync Project
+                            </>
+                          )}
+                        </button>
+                      );
+                    })()
+                  )}
+                </div>
+              </form>
+            )}
+          </motion.div>
+        </div>
+      )}
+
+      {/* File/Folder Action Dialog */}
+      {dialogConfig.type && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl"
+          >
+            {dialogConfig.type.startsWith('delete') ? (
+              <>
+                <div className="flex items-center gap-3 text-red-400 mb-4">
+                  <AlertTriangle className="w-6 h-6" />
+                  <h3 className="text-lg font-semibold text-white">Confirm Deletion</h3>
+                </div>
+                <p className="text-zinc-400 mb-6 text-sm leading-relaxed">
+                  Are you sure you want to delete <span className="text-zinc-200 font-mono bg-white/5 px-1.5 py-0.5 rounded">{dialogConfig.path}</span>? 
+                  {dialogConfig.type === 'deleteFolder' && " This will also delete all its contents."}
+                  <br/><br/>This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setDialogConfig({ type: null, path: '' })}
+                    className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => executeDialogAction()}
+                    className="flex-1 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm font-medium transition-colors border border-red-500/20"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </>
+            ) : (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                executeDialogAction(formData.get('value') as string);
+              }}>
+                <h3 className="text-lg font-semibold text-white mb-4">
+                  {dialogConfig.type === 'renameFile' && 'Rename File'}
+                  {dialogConfig.type === 'renameFolder' && 'Rename Folder'}
+                  {dialogConfig.type === 'moveFile' && 'Move File'}
+                </h3>
+                <div className="mb-6">
+                  <label className="block text-xs font-medium text-zinc-500 mb-2 uppercase tracking-wider">
+                    {dialogConfig.type.startsWith('rename') ? 'New Name' : 'New Path'}
+                  </label>
+                  <input 
+                    autoFocus
+                    name="value"
+                    defaultValue={dialogConfig.initialValue}
+                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                    placeholder={dialogConfig.type.startsWith('rename') ? 'name.ext' : 'path/to/file.ext'}
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setDialogConfig({ type: null, path: '' })}
+                    className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors border border-emerald-500/20"
+                  >
+                    {dialogConfig.type.startsWith('rename') ? 'Rename' : 'Move'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </motion.div>
+        </div>
+      )}
+      {/* Enhance Modal */}
+      {enhanceModal !== 'closed' && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Wand2 className="w-4 h-4 text-emerald-400" />
+                <span className="text-sm font-semibold text-zinc-100">Enhance your idea</span>
+              </div>
+              <button
+                onClick={() => setEnhanceModal('closed')}
+                className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Original idea pill */}
+            <div className="px-6 pt-4">
+              <p className="text-[11px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">Your idea</p>
+              <p className="text-sm text-zinc-300 bg-zinc-800/60 rounded-xl px-3 py-2 border border-zinc-700 line-clamp-2">{prompt}</p>
+            </div>
+
+            {/* Loading state */}
+            {enhanceModal === 'loading' && (
+              <div className="flex flex-col items-center gap-3 py-12 px-6">
+                <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+                <p className="text-sm text-zinc-400">Thinking about your game...</p>
+              </div>
+            )}
+
+            {/* Questions */}
+            {enhanceModal === 'questions' && (
+              <div className="px-6 py-4 space-y-4">
+                <p className="text-xs text-zinc-400 mt-1">Answer a few quick questions so I can write the perfect prompt. All fields are optional.</p>
+                {enhanceQuestions.map((q, i) => (
+                  <div key={q.id} className="space-y-1.5">
+                    <label className="text-sm font-medium text-zinc-200">
+                      <span className="text-emerald-500 mr-1.5">{i + 1}.</span>{q.question}
+                    </label>
+                    <input
+                      type="text"
+                      value={enhanceAnswers[q.id] || ''}
+                      onChange={e => setEnhanceAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                      placeholder={q.placeholder}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                    />
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => setEnhanceModal('closed')}
+                    className="flex-1 py-2 text-sm text-zinc-400 hover:text-zinc-200 bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleEnhanceFinalize}
+                    className="flex-1 py-2 text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    Enhance Prompt
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Finalizing state */}
+            {enhanceModal === 'finalizing' && (
+              <div className="flex flex-col items-center gap-3 py-12 px-6">
+                <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+                <p className="text-sm text-zinc-400">Writing your enhanced prompt...</p>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+}

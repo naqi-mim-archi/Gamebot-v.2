@@ -1,0 +1,5 @@
+{
+  "name": "Game Bot",
+  "description": "Describe a game idea and instantly generate, compile, and play it in your browser using Gemini.",
+  "requestFramePermissions": ["microphone"]
+}
