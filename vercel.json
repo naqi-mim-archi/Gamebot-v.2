@@ -1,6 +1,7 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "echo 'skip'",
   "outputDirectory": "dist",
+  "installCommand": "npm install --ignore-scripts",
   "functions": {
     "api/index.ts": {
       "maxDuration": 30
