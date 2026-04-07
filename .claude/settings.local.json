@@ -4,7 +4,8 @@
       "mcp__5408098d-5c66-4c64-a72b-deab43664ad1__list_teams",
       "mcp__5408098d-5c66-4c64-a72b-deab43664ad1__list_projects",
       "mcp__5408098d-5c66-4c64-a72b-deab43664ad1__list_deployments",
-      "mcp__5408098d-5c66-4c64-a72b-deab43664ad1__get_deployment_build_logs"
+      "mcp__5408098d-5c66-4c64-a72b-deab43664ad1__get_deployment_build_logs",
+      "mcp__5408098d-5c66-4c64-a72b-deab43664ad1__get_runtime_logs"
     ]
   }
 }
