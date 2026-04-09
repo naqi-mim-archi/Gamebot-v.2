@@ -4,7 +4,7 @@ import { getUserGames, SavedGame, UserProfile, toggleLike, getUserLikedGameIds, 
 import { bundleForPreview } from '../services/geminiService';
 import {
   Sparkles, CreditCard, Clock, Play, Gamepad2, CheckCircle2, Loader2,
-  Settings, Coins, Heart, Globe, Lock, Github, ExternalLink
+  Settings, Coins, Heart, Globe, Lock, ExternalLink
 } from 'lucide-react';
 import TopNav from './TopNav';
 import { motion, AnimatePresence } from 'motion/react';
@@ -95,13 +95,12 @@ interface CardProps {
   onNavigate: (game: SavedGame) => void;
   onLikeToggle: (gameId: string) => void;
   onPublicToggle: (gameId: string, current: boolean) => void;
-  onGithubSync: (game: SavedGame) => void;
   onDiscordShare: (game: SavedGame) => void;
 }
 
 function GameCard({
   game, liked, userProfile, onNavigate, onLikeToggle, onPublicToggle,
-  onGithubSync, onDiscordShare
+  onDiscordShare
 }: CardProps) {
   const [likePending, setLikePending] = useState(false);
 
@@ -117,11 +116,6 @@ function GameCard({
     e.stopPropagation();
     if (!game.id) return;
     onPublicToggle(game.id, !!game.isPublic);
-  };
-
-  const handleGithub = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onGithubSync(game);
   };
 
   const handleDiscord = (e: React.MouseEvent) => {
@@ -169,16 +163,6 @@ function GameCard({
           </span>
 
           <div className="flex items-center gap-1.5">
-            {/* GitHub icon — only when token exists */}
-            {userProfile?.githubToken && (
-              <button
-                onClick={handleGithub}
-                title="Push to GitHub"
-                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-all"
-              >
-                <Github className="w-3.5 h-3.5" />
-              </button>
-            )}
             {/* Discord icon — only when webhook exists */}
             {userProfile?.discordWebhookUrl && (
               <button
@@ -219,93 +203,6 @@ function GameCard({
         </div>
       </div>
     </motion.div>
-  );
-}
-
-// ── GitHub Sync Modal ─────────────────────────────────────────────────────────
-function GitHubSyncModal({
-  game,
-  idToken,
-  githubToken,
-  onClose,
-}: {
-  game: SavedGame;
-  idToken: string;
-  githubToken: string;
-  onClose: () => void;
-}) {
-  const [repo, setRepo] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
-  const [err, setErr] = useState('');
-
-  const handleSync = async () => {
-    if (!repo.trim()) return;
-    setSyncing(true);
-    setErr('');
-    try {
-      const res = await fetch('/api/github/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ repoName: repo.trim(), files: game.files, prompt: game.prompt, githubToken }), 
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Sync failed');
-      setDone(data.repoUrl);
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3 mb-4">
-          <Github className="w-5 h-5 text-white" />
-          <h3 className="text-sm font-semibold text-white">Push to GitHub</h3>
-        </div>
-        {done ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-emerald-400">Repository synced!</p>
-            <a href={done} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-sky-400 hover:text-sky-300">
-              <ExternalLink className="w-3.5 h-3.5" /> {done}
-            </a>
-            <button onClick={onClose} className="mt-2 text-xs text-zinc-400 hover:text-white">Close</button>
-          </div>
-        ) : (
-          <>
-            <p className="text-xs text-zinc-400 mb-3">Enter a repository name (will be created if it doesn't exist).</p>
-            <input
-              type="text"
-              value={repo}
-              onChange={e => setRepo(e.target.value)}
-              placeholder="my-awesome-game"
-              className="w-full bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/30 mb-3"
-              onKeyDown={e => e.key === 'Enter' && handleSync()}
-            />
-            {err && <p className="text-xs text-red-400 mb-2">{err}</p>}
-            <div className="flex gap-2">
-              <button onClick={onClose} className="flex-1 py-2 text-xs rounded-xl border border-white/10 text-zinc-400 hover:text-white transition-colors">Cancel</button>
-              <button
-                onClick={handleSync}
-                disabled={syncing || !repo.trim()}
-                className="flex-1 py-2 text-xs rounded-xl bg-white text-zinc-900 font-semibold hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Github className="w-3.5 h-3.5" />}
-                {syncing ? 'Syncing…' : 'Push'}
-              </button>
-            </div>
-          </>
-        )}
-      </motion.div>
-    </div>
   );
 }
 
@@ -395,9 +292,7 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
   const [showSuccess, setShowSuccess] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
-  const [githubModal, setGithubModal] = useState<SavedGame | null>(null);
   const [discordModal, setDiscordModal] = useState<SavedGame | null>(null);
-  const [idToken, setIdToken] = useState('');
 
   useEffect(() => {
     if (searchParams.get('session_id')) {
@@ -439,12 +334,10 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
     Promise.all([
       getUserGames(user.uid),
       getUserLikedGameIds(user.uid),
-      user.getIdToken(),
     ])
-      .then(([data, liked, token]) => {
+      .then(([data, liked]) => {
         setGames(data);
         setLikedIds(liked);
-        setIdToken(token);
         setLoading(false);
       })
       .catch((error) => {
@@ -644,7 +537,6 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
                   onNavigate={g => navigate('/app', { state: { loadGame: g } })}
                   onLikeToggle={handleLikeToggle}
                   onPublicToggle={handlePublicToggle}
-                  onGithubSync={g => setGithubModal(g)}
                   onDiscordShare={g => setDiscordModal(g)}
                 />
               ))}
@@ -655,14 +547,6 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
 
       {/* Modals */}
       <AnimatePresence>
-       {githubModal && userProfile?.githubToken && (
-          <GitHubSyncModal
-            game={githubModal}
-            idToken={idToken}
-            githubToken={userProfile.githubToken} // <-- Pass it here
-            onClose={() => setGithubModal(null)}
-          />
-        )}
         {discordModal && userProfile?.discordWebhookUrl && (
           <DiscordShareModal
             game={discordModal}

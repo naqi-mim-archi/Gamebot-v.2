@@ -285,9 +285,9 @@ export default function Showcase({ user }: { user?: any }) {
                           <Heart className={`w-3 h-3 ${likedIds.has(game.id!) ? 'fill-current' : ''}`} />
                           {game.likes ?? 0}
                         </button>
-                        <span className="flex items-center gap-1 text-xs text-zinc-500">
+                        <span className="flex items-center gap-1 text-xs text-zinc-500" title="Plays">
                           <Zap className="w-3 h-3 text-yellow-500" />
-                          {game.playCount ?? 0}
+                          {game.playCount ?? 0} plays
                         </span>
                       </div>
                     </div>

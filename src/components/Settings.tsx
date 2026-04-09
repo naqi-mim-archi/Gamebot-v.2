@@ -10,10 +10,10 @@ import {
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
-import { auth, db, storage } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import { UserProfile } from '../services/db';
 import TopNav from './TopNav';
 
@@ -126,9 +126,9 @@ export default function Settings({ user, userProfile, onLogout }: SettingsProps)
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Profile
-  const [displayName, setDisplayName] = useState(user?.displayName || '');
-  const [avatarUrl, setAvatarUrl] = useState(user?.photoURL || userProfile?.photoURL || '');
-  const [avatarPreview, setAvatarPreview] = useState(user?.photoURL || userProfile?.photoURL || '');
+  const [displayName, setDisplayName] = useState(userProfile?.displayName || user?.displayName || '');
+  const [avatarUrl, setAvatarUrl] = useState(userProfile?.photoURL || user?.photoURL || '');
+  const [avatarPreview, setAvatarPreview] = useState(userProfile?.photoURL || user?.photoURL || '');
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);
@@ -152,6 +152,18 @@ export default function Settings({ user, userProfile, onLogout }: SettingsProps)
   const [rewardToast, setRewardToast] = useState<number | null>(null);
 
   const hasEmailProvider = user?.providerData?.some((p: any) => p.providerId === 'password');
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const sendReset = async () => {
+    if (!user?.email) return;
+    setResetLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      setResetSent(true);
+    } catch {}
+    finally { setResetLoading(false); }
+  };
 
   const flash = (tokens: number) => {
     setRewardToast(tokens);
@@ -217,17 +229,10 @@ export default function Settings({ user, userProfile, onLogout }: SettingsProps)
     setAvatarUploading(true);
     setProfileError('');
     try {
-      let finalUrl: string;
-      try {
-        const storageRef = ref(storage, `users/${user.uid}/avatar`);
-        await uploadBytes(storageRef, file);
-        finalUrl = await getDownloadURL(storageRef);
-      } catch {
-        finalUrl = await resizeImageToDataURL(file, 256, 0.8);
-      }
+      // Resize to base64 — save ONLY to Firestore (Firebase Auth rejects base64 photoURLs as too long)
+      const finalUrl = await resizeImageToDataURL(file, 256, 0.8);
       setAvatarPreview(finalUrl);
       setAvatarUrl(finalUrl);
-      await updateProfile(auth.currentUser!, { photoURL: finalUrl });
       await updateDoc(doc(db, 'users', user.uid), { photoURL: finalUrl });
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 2500);
@@ -419,6 +424,32 @@ export default function Settings({ user, userProfile, onLogout }: SettingsProps)
                   )}
                 </div>
               </div>
+
+              {/* Password reset for Google/OAuth users */}
+              {!hasEmailProvider && (
+                <div className="bg-zinc-900/80 border border-white/10 rounded-2xl p-6 md:p-8">
+                  <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Lock className="w-5 h-5 text-emerald-400" /> Security
+                  </h2>
+                  <p className="text-sm text-zinc-400 mb-4">
+                    You signed in with Google. To set a password (e.g. to share account access), send a password reset email — Firebase will let you add one.
+                  </p>
+                  {resetSent ? (
+                    <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium">
+                      <Check className="w-4 h-4" /> Reset email sent to {user?.email}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={sendReset}
+                      disabled={resetLoading}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-400 text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
+                    >
+                      {resetLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                      Send Password Reset Email
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Password Card (email users only) */}
               {hasEmailProvider && (

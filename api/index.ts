@@ -297,7 +297,17 @@ app.post('/api/auth/profile', async (req, res) => {
         credits: 50,
         trialEndDate,
         createdAt: FieldValue.serverTimestamp(),
+        // Sync Google/provider display name and photo on first login
+        ...(decoded.name ? { displayName: decoded.name } : {}),
+        ...(decoded.picture ? { photoURL: decoded.picture } : {}),
       });
+    } else {
+      // Always keep displayName/photoURL in sync if user hasn't set a custom one
+      const data = snap.data()!;
+      const updates: Record<string, any> = {};
+      if (!data.displayName && decoded.name) updates.displayName = decoded.name;
+      if (!data.photoURL && decoded.picture) updates.photoURL = decoded.picture;
+      if (Object.keys(updates).length > 0) await userRef.update(updates);
     }
 
     res.json({ success: true });
@@ -745,29 +755,67 @@ app.get('/api/steam/library', async (req, res) => {
   }
 
   try {
+    const STEAM_KEY = process.env.STEAM_API_KEY;
+    let games: { appId: string; name: string; hours: number; headerImage: string }[] = [];
+
+    // ── Strategy 1: Steam Web API (most reliable, requires API key) ──────────
+    if (STEAM_KEY) {
+      const apiRes = await fetch(
+        `https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${STEAM_KEY}&steamid=${steamId}&include_appinfo=1&include_played_free_games=1&format=json`
+      );
+      if (apiRes.ok) {
+        const apiData = await apiRes.json();
+        const apiGames = apiData?.response?.games ?? [];
+        if (apiGames.length > 0) {
+          games = apiGames.map((g: any) => ({
+            appId: String(g.appid),
+            name: g.name || `App ${g.appid}`,
+            hours: Math.round((g.playtime_forever ?? 0) / 60 * 10) / 10,
+            headerImage: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/header.jpg`,
+          }));
+          games.sort((a, b) => b.hours - a.hours);
+          return res.json({ games, total: games.length, source: 'api' });
+        }
+        // If games array is empty, profile may be private — fall through to XML
+      }
+    }
+
+    // ── Strategy 2: Public XML feed (no API key, needs public profile) ───────
     const xmlRes = await fetch(
-      `https://steamcommunity.com/profiles/${steamId}/games?xml=1`,
-      { headers: { 'Accept-Language': 'en-US,en;q=0.9' } }
+      `https://steamcommunity.com/profiles/${steamId}/games?xml=1&tab=all`,
+      { headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0' } }
     );
     const xml = await xmlRes.text();
 
-    if (xml.includes('<error>') || xml.includes('This profile is private')) {
+    console.log('[steam/library] XML preview:', xml.slice(0, 300));
+
+    // Detect private profile or HTML response (login redirect)
+    if (
+      xml.includes('<error>') ||
+      xml.includes('This profile is private') ||
+      xml.includes('<!DOCTYPE html') ||
+      xml.includes('<html')
+    ) {
       return res.status(403).json({
-        error: 'Steam profile is private. Set your Steam profile and game details to Public in Steam privacy settings.',
+        error: 'Your Steam game list is private. Go to Steam → Settings → Privacy → Game Details → set to Public.',
       });
     }
 
-    const games: { appId: string; name: string; hours: number; headerImage: string }[] = [];
+    // Parse game entries — handle both CDATA names and plain text names
+    const gameBlocks = [...xml.matchAll(/<game>([\s\S]*?)<\/game>/g)];
 
-    for (const match of xml.matchAll(/<game>([\s\S]*?)<\/game>/g)) {
+    for (const match of gameBlocks) {
       const g = match[1];
       const appId = g.match(/<appID>(\d+)<\/appID>/)?.[1];
-      const name = (
+      const name =
         g.match(/<name><!\[CDATA\[(.*?)\]\]><\/name>/)?.[1] ??
-        g.match(/<name>(.*?)<\/name>/)?.[1]
-      );
-      const hoursRaw = g.match(/<hoursOnRecord>([\d,.]+)<\/hoursOnRecord>/)?.[1] ?? '0';
-      const hours = parseFloat(hoursRaw.replace(/,/g, ''));
+        g.match(/<name>(.*?)<\/name>/)?.[1];
+      // hoursOnRecord = recent play, hoursForever = total — prefer total
+      const hoursRaw =
+        g.match(/<hoursForever>([\d,.]+)<\/hoursForever>/)?.[1] ??
+        g.match(/<hoursOnRecord>([\d,.]+)<\/hoursOnRecord>/)?.[1] ??
+        '0';
+      const hours = parseFloat(hoursRaw.replace(/,/g, '')) || 0;
 
       if (appId && name) {
         games.push({
@@ -779,10 +827,16 @@ app.get('/api/steam/library', async (req, res) => {
       }
     }
 
-    // Sort: most played first
-    games.sort((a, b) => b.hours - a.hours);
+    if (games.length === 0 && xml.includes('<gamesList>')) {
+      // Profile is public but game list is private or empty
+      return res.status(403).json({
+        error: 'Your Steam game list is private. Go to Steam → Settings → Privacy → Game Details → set to Public.',
+      });
+    }
 
-    res.json({ games, total: games.length });
+    games.sort((a, b) => b.hours - a.hours);
+    res.json({ games, total: games.length, source: 'xml' });
+
   } catch (err: any) {
     console.error('[steam/library] Error:', err.message);
     res.status(500).json({ error: err.message });

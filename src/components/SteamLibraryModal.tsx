@@ -117,17 +117,23 @@ export default function SteamLibraryModal({
                 <p className="text-sm font-medium text-white mb-1">Couldn't load library</p>
                 <p className="text-xs text-zinc-400">{error}</p>
               </div>
-              {error.includes('private') && (
-                <a
-                  href="https://store.steampowered.com/account/privacy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Open Steam Privacy Settings
-                </a>
-              )}
+              <a
+                href="https://store.steampowered.com/account/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open Steam Privacy Settings
+              </a>
+              <div className="text-left bg-zinc-800/60 rounded-xl p-4 text-xs text-zinc-300 space-y-1 w-full max-w-sm">
+                <p className="font-semibold text-white mb-2">How to fix:</p>
+                <p>1. Open Steam → <strong>Settings</strong></p>
+                <p>2. Go to <strong>Privacy</strong> tab</p>
+                <p>3. Set <strong>My Profile</strong> → Public</p>
+                <p>4. Set <strong>Game Details</strong> → Public</p>
+                <p>5. Save and try again</p>
+              </div>
             </div>
           )}
 

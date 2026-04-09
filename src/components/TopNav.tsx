@@ -58,11 +58,11 @@ export default function TopNav({ user, userProfile, onLogin, onLogout, transpare
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className="flex items-center gap-2 hover:opacity-80 transition-opacity"
             >
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="User" className="w-9 h-9 rounded-full border-2 border-white/10 object-cover" referrerPolicy="no-referrer" />
+              {(userProfile?.photoURL || user.photoURL) ? (
+                <img src={userProfile?.photoURL || user.photoURL} alt="User" className="w-9 h-9 rounded-full border-2 border-white/10 object-cover" referrerPolicy="no-referrer" />
               ) : (
                 <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center border-2 border-white/10 text-white font-bold shadow-[0_0_10px_rgba(139,92,246,0.3)]">
-                  {user.email?.charAt(0).toUpperCase() || 'U'}
+                  {(userProfile?.displayName || user.displayName || user.email)?.charAt(0).toUpperCase() || 'U'}
                 </div>
               )}
               <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
@@ -78,7 +78,7 @@ export default function TopNav({ user, userProfile, onLogin, onLogout, transpare
                   className="absolute right-0 mt-2 w-56 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden py-2"
                 >
                   <div className="px-4 py-3 border-b border-white/5 mb-2">
-                    <p className="text-sm font-medium text-white truncate">{user.displayName || 'Developer'}</p>
+                    <p className="text-sm font-medium text-white truncate">{userProfile?.displayName || user.displayName || 'Developer'}</p>
                     <p className="text-xs text-zinc-400 truncate">{user.email}</p>
                   </div>
                   
