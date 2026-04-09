@@ -10,6 +10,7 @@ export default function PlayShowcaseGame() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [game, setGame] = useState<SavedGame | null>(null);
+  const [gameHtml, setGameHtml] = useState('');
   const [creatorName, setCreatorName] = useState<string>('Unknown Creator');
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -31,6 +32,7 @@ export default function PlayShowcaseGame() {
 
         if (isMounted) {
           setGame(fetchedGame);
+          setGameHtml(bundleForPreview(fetchedGame.files));
           // Increment the view/play count
           incrementPlayCount(id!);
         }
@@ -51,20 +53,6 @@ export default function PlayShowcaseGame() {
     return () => { isMounted = false; };
   }, [id]);
 
-  useEffect(() => {
-    if (!game || !iframeRef.current) return;
-    
-    // Bundle the game files and inject into iframe
-    const html = bundleForPreview(game.files);
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    
-    iframeRef.current.src = url;
-    
-    return () => {
-      URL.revokeObjectURL(url);
-    };
-  }, [game]);
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -155,6 +143,7 @@ export default function PlayShowcaseGame() {
         <div className={`w-full max-w-6xl aspect-[16/10] sm:aspect-video bg-black rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 relative ${isFullscreen ? 'max-w-none h-full rounded-none border-none aspect-auto' : ''}`}>
 <iframe
   ref={iframeRef}
+  srcDoc={gameHtml}
   sandbox="allow-scripts allow-same-origin"
   allow="autoplay; fullscreen"
   className="w-full h-full border-none bg-black"
