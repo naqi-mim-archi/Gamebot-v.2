@@ -64,15 +64,24 @@ export async function getOrCreateUserProfile(user: any): Promise<UserProfile> {
   }
 }
 
-export async function saveUserGame(userId: string, prompt: string, files: Record<string, string>) {
+export async function saveUserGame(userId: string, prompt: string, files: Record<string, string>, title?: string) {
   const gamesRef = collection(db, 'games');
   const docRef = await addDoc(gamesRef, {
     userId,
     prompt,
     files,
-    createdAt: serverTimestamp()
+    title: title || prompt.slice(0, 50),
+    likes: 0,
+    playCount: 0,
+    isPublic: false,
+    createdAt: serverTimestamp(),
   });
   return docRef.id;
+}
+
+export async function updateGameTitle(gameId: string, title: string) {
+  const gameRef = doc(db, 'games', gameId);
+  await updateDoc(gameRef, { title: title.trim() });
 }
 
 export async function updateUserProfile(uid: string, updates: Partial<Pick<UserProfile, 'displayName' | 'photoURL' | 'discordId' | 'discordUsername' | 'discordAvatar' | 'steamId' | 'steamUsername' | 'steamAvatar'>>) {

@@ -129,6 +129,17 @@ export default function Settings({ user, userProfile, onLogout }: SettingsProps)
   const [displayName, setDisplayName] = useState(userProfile?.displayName || user?.displayName || '');
   const [avatarUrl, setAvatarUrl] = useState(userProfile?.photoURL || user?.photoURL || '');
   const [avatarPreview, setAvatarPreview] = useState(userProfile?.photoURL || user?.photoURL || '');
+
+  // Sync from Firestore when userProfile loads (overrides Firebase Auth Google photo)
+  useEffect(() => {
+    if (userProfile?.photoURL) {
+      setAvatarPreview(userProfile.photoURL);
+      setAvatarUrl(userProfile.photoURL);
+    }
+    if (userProfile?.displayName) {
+      setDisplayName(userProfile.displayName);
+    }
+  }, [userProfile?.photoURL, userProfile?.displayName]);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);

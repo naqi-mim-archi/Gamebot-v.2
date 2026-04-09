@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getUserGames, SavedGame, UserProfile, toggleLike, getUserLikedGameIds, toggleGamePublic } from '../services/db';
+import { getUserGames, SavedGame, UserProfile, toggleLike, getUserLikedGameIds, toggleGamePublic, updateGameTitle } from '../services/db';
 import { bundleForPreview } from '../services/geminiService';
 import {
   Sparkles, CreditCard, Clock, Play, Gamepad2, CheckCircle2, Loader2,
-  Settings, Coins, Heart, Globe, Lock, ExternalLink
+  Settings, Coins, Heart, Globe, Lock, ExternalLink, Pencil, Check, X
 } from 'lucide-react';
 import TopNav from './TopNav';
 import { motion, AnimatePresence } from 'motion/react';
@@ -87,6 +87,41 @@ function GamePreview({ files }: { files: Record<string, string> }) {
 }
 
 // ── Game Card ─────────────────────────────────────────────────────────────────
+// ── Inline title editor ───────────────────────────────────────────────────────
+function InlineTitle({ game, onSave }: { game: SavedGame; onSave: (id: string, title: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(game.title || game.prompt.slice(0, 50));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const start = (e: React.MouseEvent) => { e.stopPropagation(); setEditing(true); setTimeout(() => inputRef.current?.select(), 30); };
+  const cancel = (e: React.MouseEvent) => { e.stopPropagation(); setValue(game.title || game.prompt.slice(0, 50)); setEditing(false); };
+  const save = (e?: React.MouseEvent) => { e?.stopPropagation(); if (value.trim() && game.id) onSave(game.id, value.trim()); setEditing(false); };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(e as any); }}
+          maxLength={60}
+          className="flex-1 bg-zinc-800 border border-emerald-500/40 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500/70"
+        />
+        <button onClick={save} className="text-emerald-400 hover:text-emerald-300 p-0.5"><Check className="w-3.5 h-3.5" /></button>
+        <button onClick={cancel} className="text-zinc-500 hover:text-zinc-300 p-0.5"><X className="w-3.5 h-3.5" /></button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 group/title cursor-text" onClick={start}>
+      <span className="text-sm font-semibold text-white truncate flex-1">{value}</span>
+      <Pencil className="w-3 h-3 text-zinc-600 opacity-0 group-hover/title:opacity-100 transition-opacity shrink-0" />
+    </div>
+  );
+}
+
 interface CardProps {
   game: SavedGame;
   liked: boolean;
@@ -96,11 +131,12 @@ interface CardProps {
   onLikeToggle: (gameId: string) => void;
   onPublicToggle: (gameId: string, current: boolean) => void;
   onDiscordShare: (game: SavedGame) => void;
+  onTitleSave: (id: string, title: string) => void;
 }
 
 function GameCard({
   game, liked, userProfile, onNavigate, onLikeToggle, onPublicToggle,
-  onDiscordShare
+  onDiscordShare, onTitleSave
 }: CardProps) {
   const [likePending, setLikePending] = useState(false);
 
@@ -149,17 +185,24 @@ function GameCard({
         </span>
       </div>
 
-      {/* Card body */}
+      {/* Card body — clicking the title/prompt area also opens the editor */}
       <div className="p-4 flex flex-col gap-3 flex-1">
-        <p className="text-xs text-zinc-300 line-clamp-2 font-medium leading-relaxed">
-          "{game.prompt}"
+        <InlineTitle game={game} onSave={(id, title) => onTitleSave(id, title)} />
+        <p
+          className="text-[10px] text-zinc-500 line-clamp-1 leading-relaxed cursor-pointer"
+          onClick={() => onNavigate(game)}
+        >
+          {game.prompt}
         </p>
 
         {/* Bottom row: file count + actions */}
         <div className="flex items-center justify-between mt-auto">
-          <span className="text-[10px] text-zinc-500 font-mono flex items-center gap-1">
+          <span
+            className="text-[10px] text-zinc-500 font-mono flex items-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors"
+            onClick={() => onNavigate(game)}
+          >
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
-            {Object.keys(game.files).length} files
+            {Object.keys(game.files).length} files · open
           </span>
 
           <div className="flex items-center gap-1.5">
@@ -216,6 +259,10 @@ function DiscordShareModal({
   webhookUrl: string;
   onClose: () => void;
 }) {
+  const [title, setTitle] = useState(game.title || game.prompt.slice(0, 60));
+  const [promptText, setPromptText] = useState(game.prompt);
+  const [includeTitle, setIncludeTitle] = useState(true);
+  const [includePrompt, setIncludePrompt] = useState(true);
   const [sharing, setSharing] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState('');
@@ -227,7 +274,12 @@ function DiscordShareModal({
       const res = await fetch('/api/discord/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookUrl, gameName: game.prompt.slice(0, 80), prompt: game.prompt, gameId: game.id }),
+        body: JSON.stringify({
+          webhookUrl,
+          gameName: includeTitle ? title : null,
+          message: includePrompt ? promptText : null,
+          gameId: game.id,
+        }),
       });
       if (!res.ok) throw new Error('Failed to share');
       setDone(true);
@@ -246,31 +298,73 @@ function DiscordShareModal({
         className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-5">
           <DiscordIcon className="w-5 h-5 text-indigo-400" />
           <h3 className="text-sm font-semibold text-white">Share to Discord</h3>
+          <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
         </div>
         {done ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-emerald-400">Posted to your Discord channel!</p>
-            <button onClick={onClose} className="text-xs text-zinc-400 hover:text-white">Close</button>
+          <div className="flex flex-col items-center gap-3 py-4">
+            <Check className="w-10 h-10 text-emerald-400" />
+            <p className="text-sm text-emerald-400 font-medium">Posted to Discord!</p>
+            <button onClick={onClose} className="text-xs text-zinc-400 hover:text-white mt-2">Close</button>
           </div>
         ) : (
-          <>
-            <p className="text-xs text-zinc-400 mb-4">This will post an embed about "<span className="text-zinc-200">{game.prompt.slice(0, 60)}</span>" to your connected Discord channel.</p>
-            {err && <p className="text-xs text-red-400 mb-2">{err}</p>}
-            <div className="flex gap-2">
+          <div className="space-y-4">
+            {/* Title field */}
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1.5">Game Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                maxLength={60}
+                className="w-full bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50"
+              />
+            </div>
+
+            {/* Checkboxes */}
+            <div>
+              <label className="block text-xs text-zinc-400 mb-2">Include in post</label>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={includeTitle} onChange={e => setIncludeTitle(e.target.checked)} className="w-4 h-4 accent-indigo-500 rounded" />
+                  <span className="text-sm text-zinc-300">Title</span>
+                  <span className="text-xs text-zinc-500 truncate max-w-[160px]">"{title}"</span>
+                </label>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={includePrompt} onChange={e => setIncludePrompt(e.target.checked)} className="w-4 h-4 accent-indigo-500 rounded" />
+                  <span className="text-sm text-zinc-300">Prompt</span>
+                  <span className="text-xs text-zinc-500 truncate max-w-[160px]">"{promptText.slice(0, 40)}"</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Prompt field */}
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1.5">Prompt</label>
+              <textarea
+                value={promptText}
+                onChange={e => setPromptText(e.target.value)}
+                rows={2}
+                className="w-full bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 resize-none"
+              />
+            </div>
+
+            {err && <p className="text-xs text-red-400 flex items-center gap-1"><X className="w-3 h-3" />{err}</p>}
+
+            <div className="flex gap-2 pt-1">
               <button onClick={onClose} className="flex-1 py-2 text-xs rounded-xl border border-white/10 text-zinc-400 hover:text-white transition-colors">Cancel</button>
               <button
                 onClick={handleShare}
-                disabled={sharing}
+                disabled={sharing || (!includeTitle && !includePrompt)}
                 className="flex-1 py-2 text-xs rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {sharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DiscordIcon className="w-3.5 h-3.5" />}
                 {sharing ? 'Sharing…' : 'Share'}
               </button>
             </div>
-          </>
+          </div>
         )}
       </motion.div>
     </div>
@@ -364,6 +458,11 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
   const handlePublicToggle = useCallback(async (gameId: string, current: boolean) => {
     await toggleGamePublic(gameId, !current);
     setGames(prev => prev.map(g => g.id === gameId ? { ...g, isPublic: !current } : g));
+  }, []);
+
+  const handleTitleSave = useCallback(async (gameId: string, title: string) => {
+    await updateGameTitle(gameId, title);
+    setGames(prev => prev.map(g => g.id === gameId ? { ...g, title } : g));
   }, []);
 
   if (!userProfile || loading) {
@@ -538,6 +637,7 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
                   onLikeToggle={handleLikeToggle}
                   onPublicToggle={handlePublicToggle}
                   onDiscordShare={g => setDiscordModal(g)}
+                  onTitleSave={handleTitleSave}
                 />
               ))}
             </div>

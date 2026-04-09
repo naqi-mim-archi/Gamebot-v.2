@@ -82,12 +82,15 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     isOpen: boolean;
     gameName: string;
     message: string;
+    includeTitle: boolean;
+    includePrompt: boolean;
     isSending: boolean;
     error: string | null;
     success: boolean;
-  }>({ isOpen: false, gameName: '', message: '', isSending: false, error: null, success: false });
+  }>({ isOpen: false, gameName: '', message: '', includeTitle: true, includePrompt: true, isSending: false, error: null, success: false });
 
   const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
+  const [projectTitle, setProjectTitle] = useState('');
 
   // Sync GitHub token from Firestore when userProfile loads/changes
   useEffect(() => {
@@ -172,7 +175,8 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       setFiles(finalLoadedFiles);
       setActiveTab('preview');
       setPrompt(loadGame.prompt);
-      addLog(`Loaded game: "${loadGame.prompt}"`, 'system');
+      setProjectTitle(loadGame.title || loadGame.prompt.slice(0, 50));
+      addLog(`Loaded game: "${loadGame.title || loadGame.prompt}"`, 'system');
     } else if ((initialPrompt || initialAttachments.length > 0) && !hasRunInitial.current) {
       hasRunInitial.current = true;
       handleGenerate(initialPrompt, initialAttachments);
@@ -488,7 +492,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
       if (user) {
         try {
-          await saveUserGame(user.uid, promptToUse, finalFiles);
+          // Title priority: user-entered → HTML <title> tag → prompt truncated
+          const htmlContent = finalFiles['index.html'] || finalFiles['/index.html'] || Object.values(finalFiles).find(v => v.includes('<title>')) || '';
+          const titleMatch = htmlContent.match(/<title[^>]*>([^<]{1,60})<\/title>/i);
+          const gameTitle = projectTitle.trim() || titleMatch?.[1]?.trim() || promptToUse.slice(0, 50);
+          await saveUserGame(user.uid, promptToUse, finalFiles, gameTitle);
+          setProjectTitle('');
           addLog('Game saved to your dashboard.', 'system');
         } catch (e) {
           console.error("Failed to save game", e);
@@ -677,8 +686,8 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           webhookUrl,
-          gameName: discordShare.gameName || 'My Game',
-          message: discordShare.message,
+          gameName: discordShare.includeTitle ? (discordShare.gameName || 'My Game') : null,
+          message: discordShare.includePrompt ? discordShare.message : null,
         }),
       });
       const data = await res.json();
@@ -975,6 +984,21 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       <div className="flex-1 flex flex-col md:flex-row min-h-0">
         {/* Left Panel: Controls & Logs */}
         <div className="w-full md:w-[var(--left-width)] border-r border-white/5 flex flex-col h-full shrink-0 bg-zinc-950/50 backdrop-blur-xl">
+          {/* Project Title — pinned above logs */}
+          <div className="relative z-10 shrink-0 px-4 pt-3 pb-2 border-b border-white/5 bg-zinc-950">
+            <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-xl px-3 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600 shrink-0 select-none">Title</span>
+              <input
+                type="text"
+                value={projectTitle}
+                onChange={e => setProjectTitle(e.target.value)}
+                placeholder={files ? 'Untitled Project' : 'Name your project (optional)'}
+                maxLength={60}
+                readOnly={!!files}
+                className={`flex-1 bg-transparent text-sm font-semibold placeholder:text-zinc-600 focus:outline-none min-w-0 ${files ? 'text-zinc-400 cursor-default' : 'text-white'}`}
+              />
+            </div>
+          </div>
           {/* Terminal / Logs */}
         <div className="flex-1 p-4 overflow-y-auto bg-zinc-950 font-mono text-xs flex flex-col gap-2">
           {logs.map((log) => (
@@ -1064,7 +1088,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 onPaste={handlePaste}
                 placeholder={files ? "Refine the vibe (e.g., 'make it faster', 'add gravity')..." : "Describe your game vibe... (Drag & drop or paste files here)"}
                 className="w-full bg-transparent border-0 rounded-2xl p-4 pb-14 text-sm resize-none focus:outline-none focus:ring-0 transition-all placeholder:text-zinc-600 text-white font-display overflow-y-auto"
-                style={{ minHeight: '9rem', maxHeight: '20rem' }}
+                style={{ minHeight: files ? '9rem' : '7rem', maxHeight: '20rem' }}
                 disabled={isGenerating || isEnhancing}
               />
               
@@ -1216,7 +1240,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
               </button>
               {userProfile?.discordWebhookUrl && (
                 <button
-                  onClick={() => setDiscordShare(prev => ({ ...prev, isOpen: true, success: false, error: null }))}
+                  onClick={() => {
+                    const htmlContent = files?.['index.html'] || files?.['/index.html'] || '';
+                    const titleMatch = htmlContent.match(/<title[^>]*>([^<]{1,60})<\/title>/i);
+                    const autoName = titleMatch?.[1]?.trim() || (logs.find(l => l.type === 'revision')?.text?.replace('AI Revision: "','').replace('"','') || '').slice(0,50) || 'My Game';
+                    setDiscordShare(prev => ({ ...prev, isOpen: true, success: false, error: null, gameName: autoName, message: prompt || '' }));
+                  }}
                   className="p-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-md transition-colors shrink-0"
                   title="Share to Discord"
                 >
@@ -1473,7 +1502,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
             ) : (
               <form onSubmit={handleDiscordShare} className="space-y-4">
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1.5">Game Name</label>
+                  <label className="block text-xs text-zinc-400 mb-1.5">Game Title</label>
                   <input
                     type="text"
                     value={discordShare.gameName}
@@ -1482,18 +1511,46 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                     className="w-full bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
+
+                {/* What to include */}
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1.5">Message <span className="text-zinc-600">(optional)</span></label>
+                  <label className="block text-xs text-zinc-400 mb-2">Include in post</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={discordShare.includeTitle}
+                        onChange={e => setDiscordShare(prev => ({ ...prev, includeTitle: e.target.checked }))}
+                        className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-indigo-500"
+                      />
+                      <span className="text-sm text-zinc-300">Title</span>
+                      <span className="text-xs text-zinc-500 truncate max-w-[180px]">"{discordShare.gameName || 'My Game'}"</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={discordShare.includePrompt}
+                        onChange={e => setDiscordShare(prev => ({ ...prev, includePrompt: e.target.checked }))}
+                        className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-indigo-500"
+                      />
+                      <span className="text-sm text-zinc-300">Prompt</span>
+                      <span className="text-xs text-zinc-500 truncate max-w-[180px]">"{discordShare.message.slice(0,40) || 'game description'}"</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1.5">Prompt / Description</label>
                   <textarea
                     value={discordShare.message}
                     onChange={e => setDiscordShare(prev => ({ ...prev, message: e.target.value }))}
-                    placeholder="Check out this game I built with GameBot!"
-                    rows={3}
+                    placeholder="Describe your game..."
+                    rows={2}
                     className="w-full bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 resize-none"
                   />
                 </div>
                 <p className="text-xs text-zinc-500">
-                  Posts a Discord embed to your connected channel. You can attach videos or screenshots manually in Discord after posting.
+                  Posts to your connected Discord channel.
                 </p>
                 {discordShare.error && (
                   <p className="text-xs text-red-400 flex items-center gap-1">

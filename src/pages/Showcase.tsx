@@ -246,9 +246,14 @@ export default function Showcase({ user }: { user?: any }) {
 
                   {/* Content */}
                   <div className="p-5 flex flex-col gap-3 flex-1">
-                    <p className="text-sm text-zinc-300 line-clamp-2 leading-relaxed font-medium">
-                      "{game.prompt}"
-                    </p>
+                    <div>
+                      <p className="text-sm font-semibold text-white truncate">
+                        {(game as any).title || game.prompt.slice(0, 50)}
+                      </p>
+                      <p className="text-xs text-zinc-500 line-clamp-1 leading-relaxed mt-0.5">
+                        {game.prompt}
+                      </p>
+                    </div>
 
                     <div className="flex items-center justify-between mt-auto pt-3 border-t border-white/5">
                       {/* Creator */}
