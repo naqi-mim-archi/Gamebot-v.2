@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Play, ArrowRight, Sparkles, Heart, Gamepad2, Loader2, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { getPublicGames, SavedGame } from '../services/db';
+import { getPublicGames, SavedGame, toggleLike, getUserLikedGameIds } from '../services/db';
 import { bundleForPreview } from '../services/geminiService';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -100,13 +100,18 @@ export default function Showcase({ user }: { user?: any }) {
   const navigate = useNavigate();
   const [games, setGames] = useState<ShowcaseGame[]>([]);
   const [loading, setLoading] = useState(true);
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const raw = await getPublicGames(48);
+      const [raw, liked] = await Promise.all([
+        getPublicGames(48),
+        user ? getUserLikedGameIds(user.uid) : Promise.resolve(new Set<string>()),
+      ]);
       if (cancelled) return;
       setGames(raw);
+      setLikedIds(liked);
       setLoading(false);
 
       // Enrich with creator names (non-blocking)
@@ -128,7 +133,16 @@ export default function Showcase({ user }: { user?: any }) {
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [user]);
+
+  const handleLike = useCallback(async (e: React.MouseEvent, gameId: string) => {
+    e.stopPropagation();
+    if (!user) { navigate('/app'); return; }
+    const wasLiked = likedIds.has(gameId);
+    setLikedIds(prev => { const n = new Set(prev); wasLiked ? n.delete(gameId) : n.add(gameId); return n; });
+    setGames(prev => prev.map(g => g.id === gameId ? { ...g, likes: Math.max(0, (g.likes ?? 0) + (wasLiked ? -1 : 1)) } : g));
+    await toggleLike(gameId, user.uid);
+  }, [user, likedIds, navigate]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-emerald-500/30">
@@ -259,11 +273,18 @@ export default function Showcase({ user }: { user?: any }) {
                       </button>
 
                       {/* Stats */}
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1 text-xs text-zinc-500">
-                          <Heart className="w-3 h-3 text-rose-400" />
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={e => handleLike(e, game.id!)}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium transition-all ${
+                            likedIds.has(game.id!)
+                              ? 'bg-rose-500/20 border-rose-500/30 text-rose-400'
+                              : 'bg-white/5 border-white/10 text-zinc-500 hover:text-rose-400 hover:border-rose-500/20 hover:bg-rose-500/10'
+                          }`}
+                        >
+                          <Heart className={`w-3 h-3 ${likedIds.has(game.id!) ? 'fill-current' : ''}`} />
                           {game.likes ?? 0}
-                        </span>
+                        </button>
                         <span className="flex items-center gap-1 text-xs text-zinc-500">
                           <Zap className="w-3 h-3 text-yellow-500" />
                           {game.playCount ?? 0}

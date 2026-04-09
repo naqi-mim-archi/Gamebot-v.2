@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Play, Heart, Zap, Gamepad2, Loader2, ArrowLeft, UserPlus, UserCheck } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { getUserPublicGames, toggleFollow, checkIsFollowing, SavedGame } from '../services/db';
+import { getUserPublicGames, toggleFollow, checkIsFollowing, SavedGame, toggleLike, getUserLikedGameIds } from '../services/db';
 import { bundleForPreview } from '../services/geminiService';
 import Navbar from '../components/Navbar';
 import SEO from '../components/SEO';
@@ -84,7 +84,8 @@ export default function UserProfile({ user }: { user?: any }) {
   const [creator, setCreator] = useState<any>(null);
   const [games, setGames] = useState<SavedGame[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
+
   // Follower State
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
@@ -92,7 +93,7 @@ export default function UserProfile({ user }: { user?: any }) {
 
   useEffect(() => {
     if (!uid) return;
-    
+
     async function fetchProfile() {
       try {
         const userSnap = await getDoc(doc(db, 'users', uid!));
@@ -102,8 +103,12 @@ export default function UserProfile({ user }: { user?: any }) {
           setFollowerCount(data.followersCount || 0);
         }
 
-        const publicGames = await getUserPublicGames(uid!);
+        const [publicGames, liked] = await Promise.all([
+          getUserPublicGames(uid!),
+          user ? getUserLikedGameIds(user.uid) : Promise.resolve(new Set<string>()),
+        ]);
         setGames(publicGames);
+        setLikedIds(liked);
 
         if (user && user.uid !== uid) {
           const following = await checkIsFollowing(user.uid, uid!);
@@ -115,9 +120,18 @@ export default function UserProfile({ user }: { user?: any }) {
         setLoading(false);
       }
     }
-    
+
     fetchProfile();
   }, [uid, user]);
+
+  const handleLike = useCallback(async (e: React.MouseEvent, gameId: string) => {
+    e.stopPropagation();
+    if (!user) { alert('Sign in to like games!'); return; }
+    const wasLiked = likedIds.has(gameId);
+    setLikedIds(prev => { const n = new Set(prev); wasLiked ? n.delete(gameId) : n.add(gameId); return n; });
+    setGames(prev => prev.map(g => g.id === gameId ? { ...g, likes: Math.max(0, (g.likes ?? 0) + (wasLiked ? -1 : 1)) } : g));
+    await toggleLike(gameId, user.uid);
+  }, [user, likedIds]);
 
   const handleFollowToggle = async () => {
     if (!user) {
@@ -292,10 +306,18 @@ export default function UserProfile({ user }: { user?: any }) {
                     "{game.title || game.prompt}"
                   </h3>
                   <div className="flex items-center justify-end mt-auto pt-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-500">
-                        <Heart className="w-3.5 h-3.5 text-rose-400/80" /> {game.likes ?? 0}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={e => handleLike(e, game.id!)}
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-medium transition-all ${
+                          likedIds.has(game.id!)
+                            ? 'bg-rose-500/20 border-rose-500/30 text-rose-400'
+                            : 'bg-white/5 border-white/10 text-zinc-500 hover:text-rose-400 hover:border-rose-500/20 hover:bg-rose-500/10'
+                        }`}
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${likedIds.has(game.id!) ? 'fill-current' : ''}`} />
+                        {game.likes ?? 0}
+                      </button>
                       <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-500">
                         <Zap className="w-3.5 h-3.5 text-yellow-500/80" /> {game.playCount ?? 0}
                       </span>
