@@ -177,19 +177,25 @@ export function bundleForPreview(files: FileSystem): string {
     html = injection + html;
   }
 
+  // Helper: look up a file by path, trying multiple path variants
+  const lookupFile = (path: string): string | undefined => {
+    const clean = path.replace(/^\.\//, '').replace(/^\//, '');
+    return files[clean] || files['./' + clean] || files['/' + clean];
+  };
+
   // Inline CSS
   html = html.replace(/<link\s+[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href) => {
-    const cleanPath = href.replace(/^\.\//, '');
-    if (files[cleanPath]) return `<style>${files[cleanPath]}</style>`;
+    const content = lookupFile(href);
+    if (content) return `<style>${content}</style>`;
     return match;
   });
 
   // Inline JS
   html = html.replace(/<script\s+([^>]*)src=["']([^"']+)["']([^>]*)><\/script>/gi,
     (match, before, src, after) => {
-      const cleanPath = src.replace(/^\.\//, '');
-      if (files[cleanPath]) {
-        return `<script ${before} ${after}>${files[cleanPath]}</script>`;
+      const content = lookupFile(src);
+      if (content) {
+        return `<script ${before} ${after}>${content}</script>`;
       }
       return match;
     });

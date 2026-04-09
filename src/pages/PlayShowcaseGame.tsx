@@ -140,15 +140,18 @@ export default function PlayShowcaseGame() {
           </button>
         )}
         
-        <div className={`w-full max-w-6xl aspect-[16/10] sm:aspect-video bg-black rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 relative ${isFullscreen ? 'max-w-none h-full rounded-none border-none aspect-auto' : ''}`}>
-<iframe
-  ref={iframeRef}
-  srcDoc={gameHtml}
-  sandbox="allow-scripts allow-same-origin"
-  allow="autoplay; fullscreen"
-  className="w-full h-full border-none bg-black"
-  title="game viewport"
-/>
+        <div className={`w-full max-w-6xl aspect-[16/10] sm:aspect-video rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 relative ${isFullscreen ? 'max-w-none h-full rounded-none border-none aspect-auto' : ''}`}>
+          <iframe
+            key={gameHtml.length}
+            ref={iframeRef}
+            srcDoc={gameHtml}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
+            allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb; autoplay"
+            allowFullScreen
+            className="w-full h-full border-0 bg-white block"
+            style={{ backgroundColor: 'white' }}
+            title="game viewport"
+          />
         </div>
       </main>
     </div>
