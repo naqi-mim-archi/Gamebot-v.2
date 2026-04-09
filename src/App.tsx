@@ -5,6 +5,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import AuthModal from './components/AuthModal';
 import Dashboard from './components/Dashboard';
 import Pricing from './components/Pricing';
+import Settings from './components/Settings';
 import { auth } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { UserProfile } from './services/db';
@@ -16,6 +17,7 @@ import Showcase from './pages/Showcase';
 import PlayShowcaseGame from './pages/PlayShowcaseGame';
 import About from './pages/About';
 import Contact from './pages/Contact';
+import UserProfilePage from './pages/UserProfile';
 
 function AppRoutes() {
   const [user, setUser] = useState<any>(null);
@@ -86,6 +88,7 @@ function AppRoutes() {
         <Route path="/" element={<Home user={user} onSignIn={() => setShowAuthModal(true)} />} />
         <Route path="/showcase" element={<Showcase user={user} />} />
         <Route path="/play/:id" element={<PlayShowcaseGame />} />
+        <Route path="/profile/:uid" element={<UserProfilePage user={user} />} />
         <Route path="/about" element={<About user={user} />} />
         <Route path="/contact" element={<Contact user={user} />} />
         <Route path="/app" element={
@@ -102,6 +105,9 @@ function AppRoutes() {
         } />
         <Route path="/pricing" element={
           <Pricing user={user} userProfile={userProfile} onLogout={handleLogout} />
+        } />
+        <Route path="/settings" element={
+          <Settings user={user} userProfile={userProfile} onLogout={handleLogout} />
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

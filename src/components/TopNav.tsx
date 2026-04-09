@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserProfile } from '../services/db';
-import { Coins, LogOut, LayoutDashboard, CreditCard, User, ChevronDown, ArrowLeft } from 'lucide-react';
+import { Coins, LogOut, LayoutDashboard, CreditCard, User, ChevronDown, ArrowLeft, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface TopNavProps {
@@ -88,7 +88,10 @@ export default function TopNav({ user, userProfile, onLogin, onLogout, transpare
                   <button onClick={() => { setDropdownOpen(false); navigate('/pricing'); }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-white/5 transition-colors">
                     <CreditCard className="w-4 h-4" /> Billing & Plans
                   </button>
-                  
+                  <button onClick={() => { setDropdownOpen(false); navigate('/settings'); }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-white/5 transition-colors">
+                    <Settings className="w-4 h-4" /> Settings
+                  </button>
+
                   <div className="h-px bg-white/5 my-2" />
                   
                   <button onClick={() => { setDropdownOpen(false); onLogout?.(); }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-400/10 transition-colors">

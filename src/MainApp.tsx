@@ -1,9 +1,18 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench } from 'lucide-react';
+import { Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench, Share2 } from 'lucide-react';
+
+function DiscordIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.001.022.011.045.021.062 2.053 1.508 4.041 2.423 5.993 3.029a.077.077 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.029.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+    </svg>
+  );
+}
 import { generateGameCode, generateGameCodeStream, getEnhanceQuestions, finalizeEnhancedPrompt, EnhanceQuestion, FileAttachment, FileSystem, bundleForPreview } from './services/geminiService';
 import { saveUserGame } from './services/db';
 import { useNavigate } from 'react-router-dom';
 import TopNav from './components/TopNav';
+import SteamLibraryModal from './components/SteamLibraryModal';
 import { motion } from 'motion/react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -68,6 +77,17 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     repoUrl: string | null;
     lastSyncedFiles: Record<string, string> | null;
   }>({ isOpen: false, token: userProfile?.githubToken || '', repo: '', isSyncing: false, error: null, success: false, repoUrl: null, lastSyncedFiles: null });
+
+  const [discordShare, setDiscordShare] = useState<{
+    isOpen: boolean;
+    gameName: string;
+    message: string;
+    isSending: boolean;
+    error: string | null;
+    success: boolean;
+  }>({ isOpen: false, gameName: '', message: '', isSending: false, error: null, success: false });
+
+  const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
 
   // Sync GitHub token from Firestore when userProfile loads/changes
   useEffect(() => {
@@ -646,6 +666,29 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     }
   };
 
+  const handleDiscordShare = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const webhookUrl = userProfile?.discordWebhookUrl;
+    if (!webhookUrl) return;
+    setDiscordShare(prev => ({ ...prev, isSending: true, error: null }));
+    try {
+      const res = await fetch('/api/discord/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl,
+          gameName: discordShare.gameName || 'My Game',
+          message: discordShare.message,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to share');
+      setDiscordShare(prev => ({ ...prev, isSending: false, success: true }));
+    } catch (err: any) {
+      setDiscordShare(prev => ({ ...prev, isSending: false, error: err.message }));
+    }
+  };
+
   const handleDownloadZip = async () => {
     if (!files) return;
     
@@ -1060,6 +1103,20 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   <Wand2 className="w-4 h-4" />
                   <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Enhance</span>
                 </button>
+
+                {userProfile?.steamId && (
+                  <button
+                    onClick={() => setSteamLibraryOpen(true)}
+                    disabled={isGenerating}
+                    className="p-1.5 text-sky-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1"
+                    title="Inspire from Steam Library"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
+                    </svg>
+                    <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Library</span>
+                  </button>
+                )}
               </div>
 
               <button
@@ -1150,13 +1207,22 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 <Maximize className="w-4 h-4" />
               </button>
               <div className="w-px h-6 bg-zinc-800 mx-0.5 sm:mx-1 shrink-0"></div>
-              <button 
+              <button
                 onClick={() => setGithubSyncConfig(prev => ({ ...prev, isOpen: true }))}
                 className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
                 title="Sync to GitHub"
               >
                 <Github className="w-4 h-4" />
               </button>
+              {userProfile?.discordWebhookUrl && (
+                <button
+                  onClick={() => setDiscordShare(prev => ({ ...prev, isOpen: true, success: false, error: null }))}
+                  className="p-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-md transition-colors shrink-0"
+                  title="Share to Discord"
+                >
+                  <DiscordIcon className="w-4 h-4" />
+                </button>
+              )}
               <button 
                 onClick={() => canDownloadZip ? handleDownloadZip() : alert('Download ZIP is available on Creator, Pro, and Studio tiers.')}
                 className={`p-2 rounded-md transition-colors shrink-0 ${canDownloadZip ? 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800' : 'text-zinc-600 cursor-not-allowed'}`}
@@ -1359,6 +1425,96 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 Upgrade Now
               </button>
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Steam Library Modal */}
+      {steamLibraryOpen && userProfile?.steamId && (
+        <SteamLibraryModal
+          steamId={userProfile.steamId}
+          steamUsername={userProfile.steamUsername}
+          onSelect={(inspirationPrompt) => {
+            setPrompt(inspirationPrompt);
+            setSteamLibraryOpen(false);
+          }}
+          onClose={() => setSteamLibraryOpen(false)}
+        />
+      )}
+
+      {/* Discord Share Dialog */}
+      {discordShare.isOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl"
+          >
+            <div className="flex items-center gap-3 text-white mb-6">
+              <DiscordIcon className="w-6 h-6 text-indigo-400" />
+              <h3 className="text-lg font-semibold">Share to Discord</h3>
+              <button onClick={() => setDiscordShare(prev => ({ ...prev, isOpen: false }))} className="ml-auto text-zinc-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {discordShare.success ? (
+              <div className="text-center py-6">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+                <p className="text-white font-semibold mb-1">Posted to Discord!</p>
+                <p className="text-zinc-400 text-sm mb-6">Your game has been shared to the connected channel.</p>
+                <button
+                  onClick={() => setDiscordShare(prev => ({ ...prev, isOpen: false, success: false }))}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-colors text-sm"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleDiscordShare} className="space-y-4">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1.5">Game Name</label>
+                  <input
+                    type="text"
+                    value={discordShare.gameName}
+                    onChange={e => setDiscordShare(prev => ({ ...prev, gameName: e.target.value }))}
+                    placeholder="My Awesome Game"
+                    className="w-full bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1.5">Message <span className="text-zinc-600">(optional)</span></label>
+                  <textarea
+                    value={discordShare.message}
+                    onChange={e => setDiscordShare(prev => ({ ...prev, message: e.target.value }))}
+                    placeholder="Check out this game I built with GameBot!"
+                    rows={3}
+                    className="w-full bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 resize-none"
+                  />
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Posts a Discord embed to your connected channel. You can attach videos or screenshots manually in Discord after posting.
+                </p>
+                {discordShare.error && (
+                  <p className="text-xs text-red-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> {discordShare.error}
+                  </p>
+                )}
+                <div className="flex gap-3 pt-1">
+                  <button type="button" onClick={() => setDiscordShare(prev => ({ ...prev, isOpen: false }))} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-colors text-sm">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={discordShare.isSending}
+                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    {discordShare.isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                    {discordShare.isSending ? 'Posting...' : 'Post to Discord'}
+                  </button>
+                </div>
+              </form>
+            )}
           </motion.div>
         </div>
       )}
