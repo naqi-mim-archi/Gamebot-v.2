@@ -143,6 +143,13 @@ export default function UserProfile({ user }: { user?: any }) {
     setFollowPending(false);
   };
 
+  const handleDiscordCopy = () => {
+    if (creator?.discordUsername) {
+      navigator.clipboard.writeText(creator.discordUsername);
+      alert("Discord username copied to clipboard!");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center">
@@ -203,9 +210,50 @@ export default function UserProfile({ user }: { user?: any }) {
               <span><strong className="text-white">{creator?.followingCount || 0}</strong> Following</span>
             </p>
 
-            <div className="flex items-center justify-center md:justify-start gap-3">
-               {creator?.discordUsername && <span className="text-xs font-medium px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-lg border border-indigo-500/20">Discord Connected</span>}
-               {creator?.steamUsername && <span className="text-xs font-medium px-3 py-1 bg-sky-500/10 text-sky-400 rounded-lg border border-sky-500/20">Steam Linked</span>}
+            {/* Social Links Container */}
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+              {creator?.discordUsername && (
+                <button 
+                  onClick={handleDiscordCopy}
+                  title="Copy Discord Username"
+                  className="group relative flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/20 transition-all cursor-pointer overflow-hidden"
+                >
+                  <span>Discord</span>
+                  <span className="max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100 transition-all duration-300 ease-in-out whitespace-nowrap border-l border-indigo-500/30 pl-1.5 ml-0.5">
+                    {creator.discordUsername}
+                  </span>
+                </button>
+              )}
+
+              {creator?.steamUsername && (
+                <a 
+                  href={`https://steamcommunity.com/id/${creator.steamUsername}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="View Steam Profile"
+                  className="group relative flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 rounded-lg border border-sky-500/20 transition-all cursor-pointer overflow-hidden"
+                >
+                  <span>Steam</span>
+                  <span className="max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100 transition-all duration-300 ease-in-out whitespace-nowrap border-l border-sky-500/30 pl-1.5 ml-0.5">
+                    {creator.steamUsername}
+                  </span>
+                </a>
+              )}
+
+              {creator?.githubUsername && (
+                <a 
+                  href={`https://github.com/${creator.githubUsername}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="View GitHub Profile"
+                  className="group relative flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-zinc-500/10 hover:bg-zinc-500/20 text-zinc-300 rounded-lg border border-zinc-500/20 transition-all cursor-pointer overflow-hidden"
+                >
+                  <span>GitHub</span>
+                  <span className="max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100 transition-all duration-300 ease-in-out whitespace-nowrap border-l border-zinc-500/30 pl-1.5 ml-0.5">
+                    {creator.githubUsername}
+                  </span>
+                </a>
+              )}
             </div>
           </div>
         </div>
@@ -230,7 +278,6 @@ export default function UserProfile({ user }: { user?: any }) {
                 className="group relative bg-zinc-900/50 border border-white/5 rounded-3xl overflow-hidden hover:border-white/10 transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col shadow-lg"
                 onClick={() => navigate(`/play/${game.id}`)}
               >
-                {/* Notice the aspect-video container here ensuring consistent height */}
                 <div className="relative overflow-hidden w-full aspect-video border-b border-white/5">
                   <GamePreview files={game.files} />
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-10 backdrop-blur-sm">
