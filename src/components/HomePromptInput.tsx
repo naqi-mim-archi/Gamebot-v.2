@@ -1,16 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Sparkles, Mic, MicOff, Paperclip, Wand2, X, FileText, Loader2 } from 'lucide-react';
+import { ArrowRight, Sparkles, Mic, MicOff, Paperclip, Wand2, X, FileText, Loader2, LayoutTemplate } from 'lucide-react';
 import { getEnhanceQuestions, finalizeEnhancedPrompt, EnhanceQuestion, FileAttachment } from '../services/geminiService';
 import { motion } from 'motion/react';
+import GameTemplatesModal from './GameTemplatesModal';
+import SteamLibraryModal from './SteamLibraryModal';
 
-export default function HomePromptInput() {
+export default function HomePromptInput({ userProfile }: { userProfile?: any }) {
   const [prompt, setPrompt] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [enhanceModal, setEnhanceModal] = useState<'closed' | 'loading' | 'questions' | 'finalizing'>('closed');
   const [enhanceQuestions, setEnhanceQuestions] = useState<EnhanceQuestion[]>([]);
   const [enhanceAnswers, setEnhanceAnswers] = useState<Record<string, string>>({});
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
+  const [steamConnectOpen, setSteamConnectOpen] = useState(false);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -136,6 +141,20 @@ export default function HomePromptInput() {
                 <Wand2 className="w-3.5 h-3.5" />
                 <span className="text-[10px] uppercase font-bold tracking-wider">Enhance</span>
               </button>
+              <button type="button" onClick={() => setTemplatesOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-violet-400 rounded-lg transition-all border border-white/5">
+                <LayoutTemplate className="w-3.5 h-3.5" />
+                <span className="text-[10px] uppercase font-bold tracking-wider">Templates</span>
+              </button>
+              <button type="button"
+                onClick={() => userProfile?.steamId ? setSteamLibraryOpen(true) : setSteamConnectOpen(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-all border border-white/5 ${userProfile?.steamId ? 'text-sky-400' : 'text-zinc-500 hover:text-sky-400'}`}
+                title={userProfile?.steamId ? 'Steam Library' : 'Connect Steam'}>
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
+                </svg>
+                <span className="text-[10px] uppercase font-bold tracking-wider">Library</span>
+              </button>
               <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
             </div>
             <button type="submit"
@@ -155,6 +174,65 @@ export default function HomePromptInput() {
           </button>
         ))}
       </div>
+
+      {/* Templates Modal */}
+      {templatesOpen && (
+        <GameTemplatesModal
+          onSelect={(templatePrompt) => setPrompt(templatePrompt)}
+          onClose={() => setTemplatesOpen(false)}
+        />
+      )}
+
+      {/* Steam Library Modal */}
+      {steamLibraryOpen && userProfile?.steamId && (
+        <SteamLibraryModal
+          steamId={userProfile.steamId}
+          steamUsername={userProfile.steamUsername}
+          onSelect={(inspirationPrompt) => { setPrompt(inspirationPrompt); setSteamLibraryOpen(false); }}
+          onClose={() => setSteamLibraryOpen(false)}
+        />
+      )}
+
+      {/* Steam Connect Popup */}
+      {steamConnectOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }} onClick={() => setSteamConnectOpen(false)}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-zinc-950 border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/20 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-white text-sm">Connect Steam</p>
+                <p className="text-xs text-zinc-500">Use your library as inspiration</p>
+              </div>
+              <button onClick={() => setSteamConnectOpen(false)} className="ml-auto p-1.5 text-zinc-500 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm text-zinc-400 mb-5 leading-relaxed">
+              Connect your Steam account in Settings to browse your game library and use your favourite games as creative inspiration.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setSteamConnectOpen(false)} className="flex-1 py-2 text-sm text-zinc-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={() => { setSteamConnectOpen(false); navigate('/settings'); }}
+                className="flex-1 py-2 text-sm font-semibold bg-sky-500 hover:bg-sky-400 text-white rounded-xl transition-all"
+              >
+                Go to Settings
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Enhance Modal */}
       {enhanceModal !== 'closed' && (

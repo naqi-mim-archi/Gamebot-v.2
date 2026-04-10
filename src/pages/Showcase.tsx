@@ -248,7 +248,7 @@ export default function Showcase({ user }: { user?: any }) {
                   <div className="p-5 flex flex-col gap-3 flex-1">
                     <div>
                       <p className="text-sm font-semibold text-white truncate">
-                        {(game as any).title || game.prompt.slice(0, 50)}
+                        {game.title || game.prompt.slice(0, 50)}
                       </p>
                       <p className="text-xs text-zinc-500 line-clamp-1 leading-relaxed mt-0.5">
                         {game.prompt}

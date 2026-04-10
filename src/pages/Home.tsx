@@ -9,10 +9,11 @@ import HomePromptInput from '../components/HomePromptInput';
 
 interface HomeProps {
   user?: any;
+  userProfile?: any;
   onSignIn?: () => void;
 }
 
-export default function Home({ user, onSignIn }: HomeProps) {
+export default function Home({ user, userProfile, onSignIn }: HomeProps) {
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-emerald-500/30">
       <SEO 
@@ -66,7 +67,7 @@ export default function Home({ user, onSignIn }: HomeProps) {
             
             {/* Prompt Input Area */}
             <div className="mb-16">
-              <HomePromptInput />
+              <HomePromptInput userProfile={userProfile} />
             </div>
           </motion.div>
 

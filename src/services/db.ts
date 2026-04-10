@@ -79,6 +79,10 @@ export async function saveUserGame(userId: string, prompt: string, files: Record
   return docRef.id;
 }
 
+export async function updateUserGame(gameId: string, prompt: string, files: Record<string, string>) {
+  await updateDoc(doc(db, 'games', gameId), { prompt, files, updatedAt: serverTimestamp() });
+}
+
 export async function updateGameTitle(gameId: string, title: string) {
   const gameRef = doc(db, 'games', gameId);
   await updateDoc(gameRef, { title: title.trim() });

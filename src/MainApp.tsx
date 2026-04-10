@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench, Share2 } from 'lucide-react';
+import { Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench, Share2, LayoutTemplate } from 'lucide-react';
 
 function DiscordIcon({ className }: { className?: string }) {
   return (
@@ -9,10 +9,12 @@ function DiscordIcon({ className }: { className?: string }) {
   );
 }
 import { generateGameCode, generateGameCodeStream, getEnhanceQuestions, finalizeEnhancedPrompt, EnhanceQuestion, FileAttachment, FileSystem, bundleForPreview } from './services/geminiService';
-import { saveUserGame } from './services/db';
+import { saveUserGame, updateUserGame } from './services/db';
 import { useNavigate } from 'react-router-dom';
 import TopNav from './components/TopNav';
 import SteamLibraryModal from './components/SteamLibraryModal';
+import GameTemplatesModal from './components/GameTemplatesModal';
+import CreativeKickoffModal from './components/CreativeKickoffModal';
 import { motion } from 'motion/react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -90,9 +92,19 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   }>({ isOpen: false, gameName: '', message: '', includeTitle: true, includePrompt: true, isSending: false, error: null, success: false });
 
   const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
+  const [steamConnectPrompt, setSteamConnectPrompt] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [kickoffOpen, setKickoffOpen] = useState(false);
+  const [pendingPrompt, setPendingPrompt] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
   const [projectTitle, setProjectTitle] = useState('');
+  const [savedGameId, setSavedGameId] = useState<string | null>(null);
+  const [savedGamePrompt, setSavedGamePrompt] = useState('');
+  const [titleError, setTitleError] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const sessionGameIdRef = useRef<string | null>(null);
+  const TEMP_SESSION_KEY = 'logs_current_session';
 
-  // Sync GitHub token from Firestore when userProfile loads/changes
   useEffect(() => {
     if (userProfile?.githubToken) {
       setGithubSyncConfig(prev => ({ ...prev, token: userProfile.githubToken! }));
@@ -103,8 +115,17 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const canRemoveWatermark = ['studio'].includes(tier);
   const canEditCode = ['creator', 'pro', 'studio'].includes(tier);
   const canDownloadZip = ['creator', 'pro', 'studio'].includes(tier);
+  const canGithubSync = ['creator', 'pro', 'studio'].includes(tier);
   const canExportReact = ['pro', 'studio'].includes(tier);
   
+  useEffect(() => {
+    const key = sessionGameIdRef.current
+      ? `logs_${sessionGameIdRef.current}`
+      : TEMP_SESSION_KEY;
+    const toStore = logs.map(l => ({ ...l, timestamp: l.timestamp.toISOString() }));
+    localStorage.setItem(key, JSON.stringify(toStore));
+  }, [logs]);
+
   const logsEndRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -147,12 +168,10 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         }
       }
       
-      // Normalize if the loaded files is { files: { ... } }
       if (loadedFiles && loadedFiles.files && typeof loadedFiles.files === 'object' && !Array.isArray(loadedFiles.files)) {
         loadedFiles = loadedFiles.files;
       }
       
-      // Normalize if the loaded files is an array of { name, content } or { path, content }
       if (Array.isArray(loadedFiles)) {
         const normalized: FileSystem = {};
         for (const file of loadedFiles) {
@@ -162,7 +181,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         loadedFiles = normalized;
       }
       
-      // Ensure all values are strings
       const finalLoadedFiles: FileSystem = {};
       for (const key in loadedFiles) {
         if (typeof loadedFiles[key] === 'string') {
@@ -174,12 +192,33 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       
       setFiles(finalLoadedFiles);
       setActiveTab('preview');
-      setPrompt(loadGame.prompt);
+      setPrompt('');
+      setAttachments([]);
       setProjectTitle(loadGame.title || loadGame.prompt.slice(0, 50));
-      addLog(`Loaded game: "${loadGame.title || loadGame.prompt}"`, 'system');
+      setSavedGamePrompt(loadGame.prompt || '');
+      setSavedGameId(loadGame.id || null);
+      if (loadGame.id) sessionGameIdRef.current = loadGame.id;
+
+      const stored = loadGame.id ? localStorage.getItem(`logs_${loadGame.id}`) : null;
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          setLogs(parsed.map((l: any) => ({ ...l, timestamp: new Date(l.timestamp) })));
+        } catch {
+          addLog(`Loaded game: "${loadGame.title || loadGame.prompt}"`, 'system');
+        }
+      } else {
+        addLog(`Loaded game: "${loadGame.title || loadGame.prompt}"`, 'system');
+      }
     } else if ((initialPrompt || initialAttachments.length > 0) && !hasRunInitial.current) {
       hasRunInitial.current = true;
-      handleGenerate(initialPrompt, initialAttachments);
+      if (initialPrompt && !projectTitle.trim()) {
+        const autoTitle = initialPrompt.trim().split(/\s+/).slice(0, 4).join(' ');
+        setProjectTitle(autoTitle);
+      }
+      setPendingPrompt(initialPrompt);
+      setPendingAttachments(initialAttachments);
+      setKickoffOpen(true);
     }
   }, [initialPrompt, loadGame, initialAttachments]);
 
@@ -228,7 +267,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       } else if ((elem as any).webkitEnterFullscreen) {
         (elem as any).webkitEnterFullscreen();
       } else {
-        // Fallback for iOS iPhone
         setIsPseudoFullscreen(true);
       }
     }
@@ -330,7 +368,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
   const handlePaste = async (e: React.ClipboardEvent) => {
     if (e.clipboardData.files && e.clipboardData.files.length > 0) {
-      e.preventDefault(); // Prevent default paste if it's a file
+      e.preventDefault(); 
       await processFiles(e.clipboardData.files);
     }
   };
@@ -392,13 +430,29 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     setLogs(prev => [...prev, { id: Math.random().toString(36).substring(7), text, type, timestamp: new Date(), snapshot }]);
   }, []);
 
-  const handleGenerate = async (promptToUse = prompt, attachmentsToUse = attachments) => {
+  const handleGenerate = async (promptToUse = prompt, attachmentsToUse = attachments, skipKickoff = false) => {
     if (!promptToUse.trim() && attachmentsToUse.length === 0) return;
+    const isManualTrigger = promptToUse === prompt;
+    if (!files && !projectTitle.trim() && isManualTrigger && !skipKickoff) {
+      setTitleError(true);
+      titleInputRef.current?.focus();
+      setTimeout(() => setTitleError(false), 400);
+      return;
+    }
+
+    if (!files && !skipKickoff && isManualTrigger) {
+      setPendingPrompt(promptToUse);
+      setPendingAttachments(attachmentsToUse);
+      setKickoffOpen(true);
+      return;
+    }
 
     const isNewGame = !files || Object.keys(files).length === 0;
     const cost = isNewGame ? 5 : 1;
 
     setIsGenerating(true);
+    setPrompt('');
+    setAttachments([]);
     addLog(`User prompt: "${promptToUse}"`, 'system');
     if (attachmentsToUse.length > 0) {
       addLog(`Attached ${attachmentsToUse.length} file(s)`, 'system');
@@ -415,13 +469,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     
     try {
       if (!user) {
-  onRequireAuth(); // opens login
-  addLog('Please login first', 'error');
-  setIsGenerating(false);
-  return;
-}
+        onRequireAuth(); 
+        addLog('Please login first', 'error');
+        setIsGenerating(false);
+        return;
+      }
 
-// force refresh
       const stream = generateGameCodeStream(promptToUse, files || undefined, attachmentsToUse);
       let finalFiles: FileSystem | null = null;
 
@@ -492,12 +545,24 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
       if (user) {
         try {
-          // Title priority: user-entered → HTML <title> tag → prompt truncated
-          const htmlContent = finalFiles['index.html'] || finalFiles['/index.html'] || Object.values(finalFiles).find(v => v.includes('<title>')) || '';
-          const titleMatch = htmlContent.match(/<title[^>]*>([^<]{1,60})<\/title>/i);
-          const gameTitle = projectTitle.trim() || titleMatch?.[1]?.trim() || promptToUse.slice(0, 50);
-          await saveUserGame(user.uid, promptToUse, finalFiles, gameTitle);
-          setProjectTitle('');
+          if (savedGameId) {
+            await updateUserGame(savedGameId, promptToUse, finalFiles);
+            setSavedGamePrompt(promptToUse);
+          } else {
+            const htmlContent = finalFiles['index.html'] || finalFiles['/index.html'] || Object.values(finalFiles).find(v => v.includes('<title>')) || '';
+            const titleMatch = htmlContent.match(/<title[^>]*>([^<]{1,60})<\/title>/i);
+            const gameTitle = projectTitle.trim() || titleMatch?.[1]?.trim() || promptToUse.slice(0, 50);
+            const newGameId = await saveUserGame(user.uid, promptToUse, finalFiles, gameTitle);
+            setSavedGameId(newGameId);
+            setSavedGamePrompt(promptToUse);
+            sessionGameIdRef.current = newGameId;
+            const temp = localStorage.getItem(TEMP_SESSION_KEY);
+            if (temp) {
+              localStorage.setItem(`logs_${newGameId}`, temp);
+              localStorage.removeItem(TEMP_SESSION_KEY);
+            }
+            setProjectTitle('');
+          }
           addLog('Game saved to your dashboard.', 'system');
         } catch (e) {
           console.error("Failed to save game", e);
@@ -506,8 +571,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
       addLog(`AI Revision: "${promptToUse}"`, 'revision', finalFiles);
       addLog('Game generated successfully!', 'success');
-      setPrompt('');
-      setAttachments([]);
     } catch (error: any) {
       if (error?.message === 'INSUFFICIENT_CREDITS') {
         showOutOfCreditsModal(cost);
@@ -523,7 +586,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       handleGenerate();
     }
@@ -573,7 +636,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       if (event.data?.type === 'GITHUB_AUTH_SUCCESS' && event.data.token) {
         const githubToken = event.data.token;
         setGithubSyncConfig(prev => ({ ...prev, token: githubToken, error: null }));
-        // Persist token to Firestore via server (Admin SDK bypasses security rules)
         if (user) {
           user.getIdToken().then(idToken => {
             fetch('/api/auth/github/token', {
@@ -652,10 +714,10 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          token,
+          githubToken: token,
           repoName: repo,
           files: filesToSync,
-          description: 'Generated by GameBot'
+          prompt,
         })
       });
       
@@ -686,8 +748,9 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           webhookUrl,
-          gameName: discordShare.includeTitle ? (discordShare.gameName || 'My Game') : null,
+          gameName: discordShare.includeTitle ? (discordShare.gameName || 'My Game') : 'My Game',
           message: discordShare.includePrompt ? discordShare.message : null,
+          gameId: savedGameId,
         }),
       });
       const data = await res.json();
@@ -714,7 +777,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     if (!files || !files[path]) return;
     try {
       await navigator.clipboard.writeText(files[path] as string);
-      // Could add a toast here
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }
@@ -770,7 +832,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       }
       
       if (newFiles[newPath]) {
-        // File exists, just close dialog
         setDialogConfig({ type: null, path: '' });
         return;
       }
@@ -786,7 +847,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       }
 
       if (newFiles[newValue]) {
-        // File exists, just close dialog
         setDialogConfig({ type: null, path: '' });
         return;
       }
@@ -845,7 +905,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const renderFileTree = () => {
     if (!files) return null;
 
-    // Build a simple tree structure
     const tree: any = { type: 'folder', name: 'root', path: '/', children: {} };
     
     Object.keys(files).forEach(filePath => {
@@ -908,11 +967,9 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         );
       }
 
-      // Root folder doesn't render itself, just its children
       if (node.path === '/') {
         return Object.values(node.children)
           .sort((a: any, b: any) => {
-            // Folders first
             if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
             return a.name.localeCompare(b.name);
           })
@@ -971,7 +1028,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
   return (
     <div 
-      className="min-h-screen bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
+      className="h-[100dvh] w-full overflow-hidden bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
       style={{ '--left-width': `${leftPanelWidth}%` } as React.CSSProperties}
     >
       <TopNav 
@@ -981,26 +1038,40 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         onLogout={onLogout} 
       />
 
-      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
         {/* Left Panel: Controls & Logs */}
-        <div className="w-full md:w-[var(--left-width)] border-r border-white/5 flex flex-col h-full shrink-0 bg-zinc-950/50 backdrop-blur-xl">
+        <div className="w-full md:w-[var(--left-width)] border-r border-white/5 flex flex-col min-h-0 shrink-0 bg-zinc-950/50 backdrop-blur-xl overflow-hidden">
           {/* Project Title — pinned above logs */}
           <div className="relative z-10 shrink-0 px-4 pt-3 pb-2 border-b border-white/5 bg-zinc-950">
-            <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-xl px-3 py-2">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600 shrink-0 select-none">Title</span>
+            <div className={`flex items-center gap-2 bg-zinc-900 rounded-xl px-3 py-2 border transition-colors ${
+              titleError
+                ? 'border-red-500/70 animate-[shake_0.35s_ease-in-out]'
+                : files
+                  ? 'border-white/5'
+                  : 'border-white/10 focus-within:border-emerald-500/40'
+            }`}>
+              <span className="text-[10px] font-semibold uppercase tracking-widest shrink-0 select-none text-zinc-600">
+                Title{!files && <span className="text-red-500 ml-0.5">*</span>}
+              </span>
               <input
+                ref={titleInputRef}
                 type="text"
                 value={projectTitle}
-                onChange={e => setProjectTitle(e.target.value)}
-                placeholder={files ? 'Untitled Project' : 'Name your project (optional)'}
+                onChange={e => { setProjectTitle(e.target.value); if (titleError) setTitleError(false); }}
+                placeholder={files ? 'Untitled Project' : 'Name your project…'}
                 maxLength={60}
                 readOnly={!!files}
-                className={`flex-1 bg-transparent text-sm font-semibold placeholder:text-zinc-600 focus:outline-none min-w-0 ${files ? 'text-zinc-400 cursor-default' : 'text-white'}`}
+                className={`flex-1 bg-transparent text-sm font-semibold placeholder:text-zinc-600 focus:outline-none min-w-0 ${
+                  files ? 'text-zinc-400 cursor-default' : titleError ? 'text-red-300' : 'text-white'
+                }`}
               />
+              {!files && !projectTitle.trim() && (
+                <span className="text-[10px] text-zinc-600 shrink-0 select-none">required</span>
+              )}
             </div>
           </div>
-          {/* Terminal / Logs */}
-        <div className="flex-1 p-4 overflow-y-auto bg-zinc-950 font-mono text-xs flex flex-col gap-2">
+          {/* Terminal / Logs — scrollable, takes remaining space */}
+          <div className="flex-1 min-h-0 p-4 overflow-y-auto bg-zinc-950 font-mono text-xs flex flex-col gap-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 hover:[&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-thumb]:rounded-full [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.1)_transparent]">
           {logs.map((log) => (
             <div key={log.id} className="flex flex-col gap-1">
               <div className="flex gap-2 items-start">
@@ -1021,10 +1092,10 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 {log.type === 'revision' && log.snapshot && (
                   <button
                     onClick={() => handleRollback(log.snapshot!)}
-                    className="shrink-0 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded transition-colors"
-                    title="Rollback to this version"
+                    className="shrink-0 text-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                    title="Restore this version"
                   >
-                    Rollback
+                    <RefreshCw className="w-2.5 h-2.5" /> Restore
                   </button>
                 )}
               </div>
@@ -1059,8 +1130,8 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           <div ref={logsEndRef} />
         </div>
 
-          {/* Prompt Input */}
-          <div className="p-4 border-t border-white/5 bg-zinc-950/80 flex flex-col gap-2">
+          {/* Prompt Input — pinned at bottom */}
+          <div className="shrink-0 p-4 border-t border-white/5 bg-zinc-950/80 flex flex-col gap-2">
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-2">
                 {attachments.map((file, index) => (
@@ -1108,7 +1179,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
-                
+
                 <button
                   onClick={toggleListening}
                   disabled={isGenerating || isEnhancing}
@@ -1117,7 +1188,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 >
                   {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </button>
-                
+
                 <button
                   onClick={handleEnhancePrompt}
                   disabled={isGenerating || enhanceModal !== 'closed' || !prompt.trim()}
@@ -1127,25 +1198,11 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   <Wand2 className="w-4 h-4" />
                   <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Enhance</span>
                 </button>
-
-                {userProfile?.steamId && (
-                  <button
-                    onClick={() => setSteamLibraryOpen(true)}
-                    disabled={isGenerating}
-                    className="p-1.5 text-sky-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1"
-                    title="Inspire from Steam Library"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
-                    </svg>
-                    <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Library</span>
-                  </button>
-                )}
               </div>
 
               <button
                 onClick={() => handleGenerate(prompt)}
-                disabled={isGenerating || (!prompt.trim() && attachments.length === 0)}
+                disabled={isGenerating || (!prompt.trim() && attachments.length === 0) || (!files && !projectTitle.trim())}
                 className="absolute bottom-3 right-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
               >
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : (
@@ -1171,7 +1228,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         />
 
         {/* Right Panel: Preview & Code */}
-        <div className="w-full md:flex-1 flex flex-col h-full bg-[#050505] min-w-0 relative">
+        <div className="w-full md:flex-1 flex flex-col min-h-0 bg-[#050505] min-w-0 relative overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 sm:px-4 py-2 sm:py-0 h-auto sm:h-14 border-b border-white/5 bg-zinc-950/80 backdrop-blur-md z-10 gap-2">
           <div className="flex gap-1 overflow-x-auto no-scrollbar shrink-0">
             <button
@@ -1232,19 +1289,25 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
               </button>
               <div className="w-px h-6 bg-zinc-800 mx-0.5 sm:mx-1 shrink-0"></div>
               <button
-                onClick={() => setGithubSyncConfig(prev => ({ ...prev, isOpen: true }))}
-                className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
-                title="Sync to GitHub"
+                onClick={() => canGithubSync
+                  ? setGithubSyncConfig(prev => ({ ...prev, isOpen: true }))
+                  : alert('GitHub Sync is available on Creator, Pro, and Studio tiers.')}
+                className={`p-2 rounded-md transition-colors shrink-0 ${canGithubSync ? 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800' : 'text-zinc-600 cursor-not-allowed'}`}
+                title={canGithubSync ? 'Sync to GitHub' : 'GitHub Sync (Upgrade Required)'}
               >
                 <Github className="w-4 h-4" />
               </button>
               {userProfile?.discordWebhookUrl && (
                 <button
                   onClick={() => {
-                    const htmlContent = files?.['index.html'] || files?.['/index.html'] || '';
-                    const titleMatch = htmlContent.match(/<title[^>]*>([^<]{1,60})<\/title>/i);
-                    const autoName = titleMatch?.[1]?.trim() || (logs.find(l => l.type === 'revision')?.text?.replace('AI Revision: "','').replace('"','') || '').slice(0,50) || 'My Game';
-                    setDiscordShare(prev => ({ ...prev, isOpen: true, success: false, error: null, gameName: autoName, message: prompt || '' }));
+                    setDiscordShare(prev => ({
+                      ...prev,
+                      isOpen: true,
+                      success: false,
+                      error: null,
+                      gameName: projectTitle || 'My Game',
+                      message: savedGamePrompt,
+                    }));
                   }}
                   className="p-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-md transition-colors shrink-0"
                   title="Share to Discord"
@@ -1310,60 +1373,89 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           )}
 
           {files && activeTab === 'preview' && (
-            <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
-              <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none"></div>
-              <div 
-                className={`bg-white transition-all duration-300 ease-in-out shrink-0 relative z-10 ${
-                  isPseudoFullscreen ? 'fixed inset-0 w-screen h-screen z-[100] border-0 rounded-none' :
-                  deviceView === 'desktop' ? 'w-[1280px] h-[720px] shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-lg overflow-hidden border-[12px] border-b-[24px] border-zinc-900' : 
-                  deviceView === 'tablet' ? 'w-[768px] h-[1024px] shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-xl overflow-hidden border border-white/10' : 
-                  'w-[375px] h-[812px] shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-[2.5rem] overflow-hidden border-[12px] border-zinc-900'
-                }`}
-              >
-                {isPseudoFullscreen && (
-                  <button 
-                    onClick={() => setIsPseudoFullscreen(false)}
-                    className="absolute top-4 right-4 z-[101] bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"
-                    title="Exit Fullscreen"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-                )}
-                <iframe
-                  key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
-                  ref={iframeRef}
-                  srcDoc={bundleForPreview(files)}
-                  className="w-full h-full border-0 bg-white block"
-                  style={{ backgroundColor: 'white' }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
-                  allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
-                  allowFullScreen
-                  title="Game Preview"
-                />
-                {!canRemoveWatermark && !isPseudoFullscreen && (
-                  <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    Created with Game Bot
-                  </div>
-                )}
-              </div>
+            <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-[#050505]">
+              <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none" />
+
+              {isPseudoFullscreen ? (
+                <div className="fixed inset-0 z-[100] bg-white">
+                  <button onClick={() => setIsPseudoFullscreen(false)} className="absolute top-4 right-4 z-[101] bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"><X className="w-6 h-6" /></button>
+                  <iframe key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'} ref={iframeRef} srcDoc={bundleForPreview(files)} className="w-full h-full border-0 block" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads" allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb" allowFullScreen title="Game Preview" />
+                </div>
+              ) : deviceView === 'desktop' ? (
+                <div className="w-full h-full relative">
+                  <iframe
+                    key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
+                    ref={iframeRef}
+                    srcDoc={bundleForPreview(files)}
+                    className="w-full h-full border-0 block"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
+                    allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
+                    allowFullScreen
+                    title="Game Preview"
+                  />
+                  {!canRemoveWatermark && (
+                    <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      Created with Game Bot
+                    </div>
+                  )}
+                </div>
+              ) : deviceView === 'tablet' ? (
+                <div className="h-[90%] max-h-full relative rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.6)]" style={{ aspectRatio: '3/4' }}>
+                  <iframe
+                    key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
+                    ref={iframeRef}
+                    srcDoc={bundleForPreview(files)}
+                    className="w-full h-full border-0 block bg-white"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
+                    allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
+                    allowFullScreen
+                    title="Game Preview"
+                  />
+                  {!canRemoveWatermark && (
+                    <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      Created with Game Bot
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="h-[90%] max-h-full relative rounded-[2rem] overflow-hidden border-[10px] border-zinc-800 shadow-[0_0_40px_rgba(0,0,0,0.8)]" style={{ aspectRatio: '9/19.5' }}>
+                  <iframe
+                    key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
+                    ref={iframeRef}
+                    srcDoc={bundleForPreview(files)}
+                    className="w-full h-full border-0 block bg-white"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
+                    allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
+                    allowFullScreen
+                    title="Game Preview"
+                  />
+                  {!canRemoveWatermark && (
+                    <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      Created with Game Bot
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {files && activeTab === 'code' && (
-            <div className="w-full h-full flex bg-[#0a0a0a]">
+            <div className="absolute inset-0 flex bg-[#0a0a0a]">
               {/* File Explorer Sidebar */}
-              <div className="w-64 border-r border-white/5 bg-zinc-950/50 flex flex-col shrink-0">
+              <div className="w-56 border-r border-white/5 bg-zinc-950/50 flex flex-col shrink-0">
                 <div className="h-10 border-b border-white/5 flex items-center px-4 shrink-0">
                   <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Explorer</span>
                 </div>
-                <div className="flex-1 overflow-y-auto py-2">
+                <div className="flex-1 overflow-y-auto py-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 hover:[&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-thumb]:rounded-full">
                   {renderFileTree()}
                 </div>
               </div>
 
               {/* Code Editor Area */}
-              <div className="flex-1 flex flex-col min-w-0 bg-[#0d0d0d]">
+              <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#0d0d0d] overflow-hidden">
                 {selectedFile ? (
                   <>
                     <div className="h-10 border-b border-white/5 bg-zinc-950 flex items-center justify-between px-4 shrink-0 shadow-sm z-10">
@@ -1395,7 +1487,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                         </button>
                       </div>
                     </div>
-                    <div className="flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-hidden min-h-0">
                       <Editor
                         height="100%"
                         language={selectedFile.endsWith('.css') ? 'css' : selectedFile.endsWith('.html') ? 'html' : selectedFile.endsWith('.json') ? 'json' : 'javascript'}
@@ -1471,6 +1563,69 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         />
       )}
 
+      {/* Game Templates Modal */}
+      {templatesOpen && (
+        <GameTemplatesModal
+          onSelect={(templatePrompt) => setPrompt(templatePrompt)}
+          onClose={() => setTemplatesOpen(false)}
+        />
+      )}
+
+      {/* Steam connect prompt */}
+      {steamConnectPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }} onClick={() => setSteamConnectPrompt(false)}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-zinc-950 border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.606 0 11.979 0z"/>
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-white text-sm">Connect Steam</p>
+                <p className="text-xs text-zinc-500">Use your game library as inspiration</p>
+              </div>
+              <button onClick={() => setSteamConnectPrompt(false)} className="ml-auto p-1.5 text-zinc-500 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm text-zinc-400 mb-5 leading-relaxed">
+              Connect your Steam account to browse your game library and use it as creative inspiration for game generation.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setSteamConnectPrompt(false)} className="flex-1 py-2 text-sm text-zinc-400 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={() => { setSteamConnectPrompt(false); navigate('/settings'); }}
+                className="flex-1 py-2 text-sm font-semibold bg-sky-500 hover:bg-sky-400 text-white rounded-xl transition-all"
+              >
+                Go to Settings
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Creative Kickoff Modal */}
+      {kickoffOpen && (
+        <CreativeKickoffModal
+          prompt={pendingPrompt}
+          title={projectTitle}
+          onConfirm={(finalPrompt, confirmedTitle) => {
+            setKickoffOpen(false);
+            setProjectTitle(confirmedTitle);
+            handleGenerate(finalPrompt, pendingAttachments, true);
+          }}
+          onCancel={() => setKickoffOpen(false)}
+        />
+      )}
+
       {/* Discord Share Dialog */}
       {discordShare.isOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1512,7 +1667,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   />
                 </div>
 
-                {/* What to include */}
                 <div>
                   <label className="block text-xs text-zinc-400 mb-2">Include in post</label>
                   <div className="space-y-2">
