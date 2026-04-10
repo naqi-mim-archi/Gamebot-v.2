@@ -91,10 +91,11 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
         if (tier === 'topup') {
           await userRef.update({ credits: FieldValue.increment(credits) });
         } else if (tier) {
-          await userRef.update({ 
-            tier: tier, 
+          await userRef.update({
+            tier: tier,
             credits: FieldValue.increment(credits),
-            stripeCustomerId: session.customer as string
+            stripeCustomerId: session.customer as string,
+            trialEndDate: null,
           });
         }
       }

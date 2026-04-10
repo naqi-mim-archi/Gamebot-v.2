@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Maximize2, Minimize2, Loader2, Share2 } from 'lucide-react';
+import { ArrowLeft, Maximize2, Minimize2, Loader2, Share2, GitFork } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { getGameById, incrementPlayCount, SavedGame } from '../services/db';
@@ -107,7 +107,18 @@ export default function PlayShowcaseGame() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button 
+          {/* Spin Off */}
+          {game && (
+            <button
+              onClick={() => navigate('/app', { state: { loadGame: game, isSpinOff: true } })}
+              title="Spin Off — fork this game and improve it"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-all"
+            >
+              <GitFork className="w-3.5 h-3.5" />
+              Spin Off
+            </button>
+          )}
+          <button
             onClick={handleShare}
             className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors relative"
             title="Share Game"
@@ -119,7 +130,7 @@ export default function PlayShowcaseGame() {
               </span>
             )}
           </button>
-          <button 
+          <button
             onClick={() => setIsFullscreen(!isFullscreen)}
             className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
             title="Toggle Fullscreen"

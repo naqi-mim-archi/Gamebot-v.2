@@ -127,12 +127,14 @@ function MainAppWrapper({ user, userProfile, onRequireAuth, onLogout, onGoHome }
   const initialPrompt = location.state?.initialPrompt || '';
   const initialAttachments = location.state?.initialAttachments || [];
   const loadGame = location.state?.loadGame || null;
-  
+  const isSpinOff = location.state?.isSpinOff || false;
+
   return (
-    <MainApp 
-      initialPrompt={initialPrompt} 
+    <MainApp
+      initialPrompt={initialPrompt}
       initialAttachments={initialAttachments}
       loadGame={loadGame}
+      isSpinOff={isSpinOff}
       user={user} 
       userProfile={userProfile}
       onRequireAuth={onRequireAuth} 

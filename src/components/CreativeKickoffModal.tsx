@@ -16,6 +16,7 @@ interface GamePlan {
 interface Props {
   prompt: string;
   title?: string;
+  isSpinOff?: boolean;
   onConfirm: (finalPrompt: string, title: string) => void;
   onCancel: () => void;
 }
@@ -75,12 +76,14 @@ function ToggleGroup<T extends string>({
   );
 }
 
-export default function CreativeKickoffModal({ prompt, title: initialTitle = '', onConfirm, onCancel }: Props) {
+export default function CreativeKickoffModal({ prompt, title: initialTitle = '', isSpinOff = false, onConfirm, onCancel }: Props) {
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState<GamePlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gameTitle, setGameTitle] = useState(initialTitle);
   const [titleError, setTitleError] = useState(false);
+  const [changesPrompt, setChangesPrompt] = useState('');
+  const [changesError, setChangesError] = useState(false);
   const [setup, setSetup] = useState<{ dimension: '2D' | '3D'; platform: 'desktop' | 'mobile' | 'both'; players: 'single' | 'multi' }>({
     dimension: '2D',
     platform: 'both',
@@ -121,6 +124,12 @@ export default function CreativeKickoffModal({ prompt, title: initialTitle = '',
   }, [prompt]);
 
   const handleConfirm = () => {
+    // Spin-off: require the changes description first
+    if (isSpinOff && !changesPrompt.trim()) {
+      setChangesError(true);
+      setTimeout(() => setChangesError(false), 600);
+      return;
+    }
     if (!gameTitle.trim()) {
       setTitleError(true);
       setTimeout(() => setTitleError(false), 600);
@@ -132,9 +141,11 @@ export default function CreativeKickoffModal({ prompt, title: initialTitle = '',
     if (setup.platform !== 'both') parts.push(setup.platform === 'desktop' ? 'Desktop' : 'Mobile');
     if (setup.players !== 'single') parts.push('Multiplayer');
 
+    // Spin-off: generate using the user's described changes, not the original prompt
+    const basePrompt = isSpinOff ? changesPrompt.trim() : prompt;
     const finalPrompt = parts.length > 0
-      ? `${prompt} [${parts.join(' · ')}]`
-      : prompt;
+      ? `${basePrompt} [${parts.join(' · ')}]`
+      : basePrompt;
 
     onConfirm(finalPrompt, gameTitle.trim());
   };
@@ -173,8 +184,12 @@ export default function CreativeKickoffModal({ prompt, title: initialTitle = '',
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 shrink-0 bg-zinc-950 z-10">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-400" />
-            <span className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">Creative Kickoff</span>
-            <span className="text-[10px] text-zinc-600 hidden sm:inline">· Ready to create</span>
+            <span className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">
+              {isSpinOff ? 'Spin Off Kickoff' : 'Creative Kickoff'}
+            </span>
+            <span className="text-[10px] text-zinc-600 hidden sm:inline">
+              {isSpinOff ? '· Fork & improve' : '· Ready to create'}
+            </span>
           </div>
           <button
             onClick={onCancel}
@@ -192,7 +207,9 @@ export default function CreativeKickoffModal({ prompt, title: initialTitle = '',
             {loading && (
               <div className="flex flex-col items-center justify-center py-16 gap-3 shrink-0">
                 <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
-                <p className="text-sm text-zinc-400">Analyzing your game idea…</p>
+                <p className="text-sm text-zinc-400">
+                  {isSpinOff ? 'Analyzing original game…' : 'Analyzing your game idea…'}
+                </p>
               </div>
             )}
 
@@ -200,6 +217,24 @@ export default function CreativeKickoffModal({ prompt, title: initialTitle = '',
               <div className="bg-red-500/5 border border-red-500/15 rounded-xl px-4 py-3 flex items-center gap-2 shrink-0">
                 <span className="text-red-400 text-xs">⚠</span>
                 <p className="text-xs text-zinc-400">Couldn't load AI analysis — you can still configure setup and create below.</p>
+              </div>
+            )}
+
+            {!loading && isSpinOff && (
+              <div className="shrink-0">
+                <p className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase mb-1.5">
+                  What changes would you like to make? <span className="text-red-400">*</span>
+                </p>
+                <textarea
+                  value={changesPrompt}
+                  onChange={e => setChangesPrompt(e.target.value)}
+                  placeholder="e.g. Add powerups, make it multiplayer, change the theme to space..."
+                  rows={3}
+                  autoFocus
+                  className={`w-full bg-white/5 border rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none transition-all resize-none ${
+                    changesError ? 'border-red-500 animate-[shake_0.4s_ease]' : 'border-white/10 focus:border-emerald-500/50'
+                  }`}
+                />
               </div>
             )}
 
@@ -212,7 +247,7 @@ export default function CreativeKickoffModal({ prompt, title: initialTitle = '',
                   onChange={e => setGameTitle(e.target.value)}
                   placeholder="Name your game..."
                   className={`w-full bg-white/5 border rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none transition-all ${titleError ? 'border-red-500 animate-[shake_0.4s_ease]' : 'border-white/10 focus:border-emerald-500/50'}`}
-                  autoFocus={!plan}
+                  autoFocus={!isSpinOff && !plan}
                 />
               </div>
             )}

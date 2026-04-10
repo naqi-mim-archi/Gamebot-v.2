@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Play, ArrowRight, Sparkles, Heart, Gamepad2, Loader2, Zap } from 'lucide-react';
+import { Play, ArrowRight, Sparkles, Heart, Gamepad2, Loader2, Zap, GitFork } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -277,7 +277,7 @@ export default function Showcase({ user }: { user?: any }) {
                         </span>
                       </button>
 
-                      {/* Stats */}
+                      {/* Stats + Actions */}
                       <div className="flex items-center gap-2">
                         <button
                           onClick={e => handleLike(e, game.id!)}
@@ -292,8 +292,20 @@ export default function Showcase({ user }: { user?: any }) {
                         </button>
                         <span className="flex items-center gap-1 text-xs text-zinc-500" title="Plays">
                           <Zap className="w-3 h-3 text-yellow-500" />
-                          {game.playCount ?? 0} plays
+                          {game.playCount ?? 0}
                         </span>
+                        {/* Spin Off */}
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            navigate('/app', { state: { loadGame: game, isSpinOff: true } });
+                          }}
+                          title="Spin Off — fork this game and improve it"
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 hover:border-emerald-500/30 transition-all"
+                        >
+                          <GitFork className="w-3 h-3" />
+                          Spin Off
+                        </button>
                       </div>
                     </div>
                   </div>

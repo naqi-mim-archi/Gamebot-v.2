@@ -64,7 +64,7 @@ export async function getOrCreateUserProfile(user: any): Promise<UserProfile> {
   }
 }
 
-export async function saveUserGame(userId: string, prompt: string, files: Record<string, string>, title?: string) {
+export async function saveUserGame(userId: string, prompt: string, files: Record<string, string>, title?: string, isPublic = true) {
   const gamesRef = collection(db, 'games');
   const docRef = await addDoc(gamesRef, {
     userId,
@@ -73,10 +73,14 @@ export async function saveUserGame(userId: string, prompt: string, files: Record
     title: title || prompt.slice(0, 50),
     likes: 0,
     playCount: 0,
-    isPublic: false,
+    isPublic,
     createdAt: serverTimestamp(),
   });
   return docRef.id;
+}
+
+export async function deleteUserGame(gameId: string) {
+  await deleteDoc(doc(db, 'games', gameId));
 }
 
 export async function updateUserGame(gameId: string, prompt: string, files: Record<string, string>) {

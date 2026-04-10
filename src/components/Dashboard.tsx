@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getUserGames, SavedGame, UserProfile, toggleLike, getUserLikedGameIds, toggleGamePublic, updateGameTitle } from '../services/db';
+import { getUserGames, SavedGame, UserProfile, toggleLike, getUserLikedGameIds, toggleGamePublic, updateGameTitle, deleteUserGame } from '../services/db';
 import { bundleForPreview } from '../services/geminiService';
 import {
   Sparkles, CreditCard, Clock, Play, Gamepad2, CheckCircle2, Loader2,
-  Settings, Coins, Heart, Globe, Lock, ExternalLink, Pencil, Check, X
+  Settings, Coins, Heart, Globe, Lock, ExternalLink, Pencil, Check, X, Trash2
 } from 'lucide-react';
 import TopNav from './TopNav';
 import { motion, AnimatePresence } from 'motion/react';
@@ -132,13 +132,17 @@ interface CardProps {
   onPublicToggle: (gameId: string, current: boolean) => void;
   onDiscordShare: (game: SavedGame) => void;
   onTitleSave: (id: string, title: string) => void;
+  onDelete: (gameId: string) => void;
 }
 
 function GameCard({
   game, liked, userProfile, onNavigate, onLikeToggle, onPublicToggle,
-  onDiscordShare, onTitleSave
+  onDiscordShare, onTitleSave, onDelete
 }: CardProps) {
   const [likePending, setLikePending] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const isPaidTier = ['creator', 'pro', 'studio'].includes(userProfile?.tier || '');
+  const isTrial = userProfile?.tier === '14-day-trial';
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -216,17 +220,21 @@ function GameCard({
                 <DiscordIcon className="w-3.5 h-3.5" />
               </button>
             )}
-            {/* Public toggle */}
+            {/* Public toggle — disabled for trial users */}
             <button
-              onClick={handlePublic}
-              title={game.isPublic ? 'Make private' : 'Make public (appears in Showcase)'}
+              onClick={isTrial ? undefined : handlePublic}
+              title={isTrial ? 'Upgrade to make games private' : (game.isPublic ? 'Make private' : 'Make public (appears in Showcase)')}
+              disabled={isTrial}
               className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
-                game.isPublic
-                  ? 'bg-sky-500/20 border-sky-500/30 text-sky-400 hover:bg-sky-500/30'
-                  : 'bg-white/5 border-white/10 text-zinc-500 hover:text-white hover:bg-white/10'
+                isTrial
+                  ? 'bg-white/3 border-white/5 text-zinc-700 cursor-not-allowed'
+                  : game.isPublic
+                    ? 'bg-sky-500/20 border-sky-500/30 text-sky-400 hover:bg-sky-500/30'
+                    : 'bg-white/5 border-white/10 text-zinc-500 hover:text-white hover:bg-white/10'
               }`}
             >
-              {game.isPublic ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+              {/* Trial users always show Globe (always public) */}
+              {isTrial || game.isPublic ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
             </button>
             {/* Like button */}
             <button
@@ -242,6 +250,34 @@ function GameCard({
               <Heart className={`w-3 h-3 ${liked ? 'fill-current' : ''}`} />
               <span>{game.likes ?? 0}</span>
             </button>
+            {/* Delete button — paid tiers only */}
+            {isPaidTier && (
+              confirmDelete ? (
+                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                  <span className="text-[10px] text-zinc-400">Sure?</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); if (game.id) onDelete(game.id); }}
+                    className="px-1.5 py-0.5 rounded-md bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] font-semibold hover:bg-red-500/30 transition-all"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); setConfirmDelete(false); }}
+                    className="px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 text-zinc-400 text-[10px] font-semibold hover:text-white transition-all"
+                  >
+                    No
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
+                  title="Delete project"
+                  className="w-7 h-7 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-zinc-500 hover:text-red-400 hover:border-red-500/20 hover:bg-red-500/10 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )
+            )}
           </div>
         </div>
       </div>
@@ -465,6 +501,11 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
     setGames(prev => prev.map(g => g.id === gameId ? { ...g, title } : g));
   }, []);
 
+  const handleDelete = useCallback(async (gameId: string) => {
+    await deleteUserGame(gameId);
+    setGames(prev => prev.filter(g => g.id !== gameId));
+  }, []);
+
   if (!userProfile || loading) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center">
@@ -638,6 +679,7 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
                   onPublicToggle={handlePublicToggle}
                   onDiscordShare={g => setDiscordModal(g)}
                   onTitleSave={handleTitleSave}
+                  onDelete={handleDelete}
                 />
               ))}
             </div>
