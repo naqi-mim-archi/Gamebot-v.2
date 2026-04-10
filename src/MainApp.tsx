@@ -8,6 +8,7 @@ function DiscordIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
 import { generateGameCode, generateGameCodeStream, getEnhanceQuestions, finalizeEnhancedPrompt, EnhanceQuestion, FileAttachment, FileSystem, bundleForPreview } from './services/geminiService';
 import { saveUserGame, updateUserGame } from './services/db';
 import { useNavigate } from 'react-router-dom';
@@ -95,6 +96,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const [steamConnectPrompt, setSteamConnectPrompt] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [kickoffOpen, setKickoffOpen] = useState(false);
+  const [kickoffDone, setKickoffDone] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
   const [projectTitle, setProjectTitle] = useState('');
@@ -105,6 +107,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const sessionGameIdRef = useRef<string | null>(null);
   const TEMP_SESSION_KEY = 'logs_current_session';
 
+  // Sync GitHub token from Firestore when userProfile loads/changes
   useEffect(() => {
     if (userProfile?.githubToken) {
       setGithubSyncConfig(prev => ({ ...prev, token: userProfile.githubToken! }));
@@ -118,6 +121,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const canGithubSync = ['creator', 'pro', 'studio'].includes(tier);
   const canExportReact = ['pro', 'studio'].includes(tier);
   
+  // Persist logs to localStorage
   useEffect(() => {
     const key = sessionGameIdRef.current
       ? `logs_${sessionGameIdRef.current}`
@@ -168,10 +172,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         }
       }
       
+      // Normalize if the loaded files is { files: { ... } }
       if (loadedFiles && loadedFiles.files && typeof loadedFiles.files === 'object' && !Array.isArray(loadedFiles.files)) {
         loadedFiles = loadedFiles.files;
       }
       
+      // Normalize if the loaded files is an array of { name, content } or { path, content }
       if (Array.isArray(loadedFiles)) {
         const normalized: FileSystem = {};
         for (const file of loadedFiles) {
@@ -181,6 +187,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         loadedFiles = normalized;
       }
       
+      // Ensure all values are strings
       const finalLoadedFiles: FileSystem = {};
       for (const key in loadedFiles) {
         if (typeof loadedFiles[key] === 'string') {
@@ -199,6 +206,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       setSavedGameId(loadGame.id || null);
       if (loadGame.id) sessionGameIdRef.current = loadGame.id;
 
+      // Restore chat history from localStorage
       const stored = loadGame.id ? localStorage.getItem(`logs_${loadGame.id}`) : null;
       if (stored) {
         try {
@@ -212,6 +220,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       }
     } else if ((initialPrompt || initialAttachments.length > 0) && !hasRunInitial.current) {
       hasRunInitial.current = true;
+      // Auto-fill title from prompt (first 4 words), show Creative Kickoff
       if (initialPrompt && !projectTitle.trim()) {
         const autoTitle = initialPrompt.trim().split(/\s+/).slice(0, 4).join(' ');
         setProjectTitle(autoTitle);
@@ -267,6 +276,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       } else if ((elem as any).webkitEnterFullscreen) {
         (elem as any).webkitEnterFullscreen();
       } else {
+        // Fallback for iOS iPhone
         setIsPseudoFullscreen(true);
       }
     }
@@ -368,7 +378,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
   const handlePaste = async (e: React.ClipboardEvent) => {
     if (e.clipboardData.files && e.clipboardData.files.length > 0) {
-      e.preventDefault(); 
+      e.preventDefault(); // Prevent default paste if it's a file
       await processFiles(e.clipboardData.files);
     }
   };
@@ -430,20 +440,31 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     setLogs(prev => [...prev, { id: Math.random().toString(36).substring(7), text, type, timestamp: new Date(), snapshot }]);
   }, []);
 
-  const handleGenerate = async (promptToUse = prompt, attachmentsToUse = attachments, skipKickoff = false) => {
+  const handleGenerate = async (
+    promptToUse = prompt, 
+    attachmentsToUse = attachments, 
+    skipKickoff = false,
+    explicitTitle?: string // Accept title directly to bypass stale state issues
+  ) => {
+    if (isGenerating) return; 
     if (!promptToUse.trim() && attachmentsToUse.length === 0) return;
+    
     const isManualTrigger = promptToUse === prompt;
-    if (!files && !projectTitle.trim() && isManualTrigger && !skipKickoff) {
-      setTitleError(true);
-      titleInputRef.current?.focus();
-      setTimeout(() => setTitleError(false), 400);
-      return;
-    }
+    const currentTitle = explicitTitle !== undefined ? explicitTitle : projectTitle;
 
-    if (!files && !skipKickoff && isManualTrigger) {
+    // Show Creative Kickoff for NEW games ONLY IF we haven't seen/dismissed it yet
+    if (!files && !skipKickoff && isManualTrigger && !kickoffDone) {
       setPendingPrompt(promptToUse);
       setPendingAttachments(attachmentsToUse);
       setKickoffOpen(true);
+      return;
+    }
+
+    // Checking the immediate variable, not the state that might be delayed
+    if (!files && !currentTitle.trim() && isManualTrigger && !skipKickoff) {
+      setTitleError(true);
+      titleInputRef.current?.focus();
+      setTimeout(() => setTitleError(false), 400);
       return;
     }
 
@@ -546,12 +567,17 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       if (user) {
         try {
           if (savedGameId) {
+            // Refinement — update the existing game document
             await updateUserGame(savedGameId, promptToUse, finalFiles);
             setSavedGamePrompt(promptToUse);
           } else {
+            // First generation — create new document
             const htmlContent = finalFiles['index.html'] || finalFiles['/index.html'] || Object.values(finalFiles).find(v => v.includes('<title>')) || '';
             const titleMatch = htmlContent.match(/<title[^>]*>([^<]{1,60})<\/title>/i);
-            const gameTitle = projectTitle.trim() || titleMatch?.[1]?.trim() || promptToUse.slice(0, 50);
+            
+            // Use currentTitle explicitly here for saving
+            const gameTitle = currentTitle.trim() || titleMatch?.[1]?.trim() || promptToUse.slice(0, 50);
+            
             const newGameId = await saveUserGame(user.uid, promptToUse, finalFiles, gameTitle);
             setSavedGameId(newGameId);
             setSavedGamePrompt(promptToUse);
@@ -561,8 +587,13 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
               localStorage.setItem(`logs_${newGameId}`, temp);
               localStorage.removeItem(TEMP_SESSION_KEY);
             }
-            setProjectTitle('');
           }
+          
+          // Guarantee UI title state stays updated if explicit title was passed
+          if (explicitTitle !== undefined) {
+             setProjectTitle(explicitTitle);
+          }
+          
           addLog('Game saved to your dashboard.', 'system');
         } catch (e) {
           console.error("Failed to save game", e);
@@ -588,7 +619,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
-      handleGenerate();
+      if (!isGenerating) handleGenerate();
     }
   };
 
@@ -1027,8 +1058,9 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   };
 
   return (
+    // Fixed layout container that prevents global scrolling
     <div 
-      className="h-[100dvh] w-full overflow-hidden bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
+      className="fixed inset-0 overflow-hidden bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
       style={{ '--left-width': `${leftPanelWidth}%` } as React.CSSProperties}
     >
       <TopNav 
@@ -1040,7 +1072,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
       <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
         {/* Left Panel: Controls & Logs */}
-        <div className="w-full md:w-[var(--left-width)] border-r border-white/5 flex flex-col min-h-0 shrink-0 bg-zinc-950/50 backdrop-blur-xl overflow-hidden">
+        <div className="w-full md:w-[var(--left-width)] border-r border-white/5 flex flex-col min-h-0 shrink-0 bg-zinc-950/50 backdrop-blur-xl">
           {/* Project Title — pinned above logs */}
           <div className="relative z-10 shrink-0 px-4 pt-3 pb-2 border-b border-white/5 bg-zinc-950">
             <div className={`flex items-center gap-2 bg-zinc-900 rounded-xl px-3 py-2 border transition-colors ${
@@ -1158,7 +1190,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder={files ? "Refine the vibe (e.g., 'make it faster', 'add gravity')..." : "Describe your game vibe... (Drag & drop or paste files here)"}
-                className="w-full bg-transparent border-0 rounded-2xl p-4 pb-14 text-sm resize-none focus:outline-none focus:ring-0 transition-all placeholder:text-zinc-600 text-white font-display overflow-y-auto"
+                className="w-full bg-transparent border-0 rounded-2xl p-4 pb-14 text-sm resize-none focus:outline-none focus:ring-0 transition-all placeholder:text-zinc-600 text-white font-display overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 hover:[&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-thumb]:rounded-full"
                 style={{ minHeight: files ? '9rem' : '7rem', maxHeight: '20rem' }}
                 disabled={isGenerating || isEnhancing}
               />
@@ -1202,7 +1234,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
               <button
                 onClick={() => handleGenerate(prompt)}
-                disabled={isGenerating || (!prompt.trim() && attachments.length === 0) || (!files && !projectTitle.trim())}
+                disabled={isGenerating || (!prompt.trim() && attachments.length === 0) || (!files && !projectTitle.trim() && kickoffDone)}
                 className="absolute bottom-3 right-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
               >
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : (
@@ -1229,7 +1261,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
         {/* Right Panel: Preview & Code */}
         <div className="w-full md:flex-1 flex flex-col min-h-0 bg-[#050505] min-w-0 relative overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 sm:px-4 py-2 sm:py-0 h-auto sm:h-14 border-b border-white/5 bg-zinc-950/80 backdrop-blur-md z-10 gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 sm:px-4 py-2 sm:py-0 h-auto sm:h-14 border-b border-white/5 bg-zinc-950/80 backdrop-blur-md z-10 gap-2 shrink-0">
           <div className="flex gap-1 overflow-x-auto no-scrollbar shrink-0">
             <button
               onClick={() => setActiveTab('preview')}
@@ -1326,7 +1358,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           )}
         </div>
 
-        <div className="flex-1 relative overflow-hidden bg-[#050505]">
+        <div className="flex-1 min-h-0 relative overflow-hidden bg-[#050505]">
           {!files && !isGenerating && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500">
               <Sparkles className="w-12 h-12 mb-4 opacity-20" />
@@ -1445,7 +1477,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           {files && activeTab === 'code' && (
             <div className="absolute inset-0 flex bg-[#0a0a0a]">
               {/* File Explorer Sidebar */}
-              <div className="w-56 border-r border-white/5 bg-zinc-950/50 flex flex-col shrink-0">
+              <div className="w-56 border-r border-white/5 bg-zinc-950/50 flex flex-col shrink-0 min-h-0">
                 <div className="h-10 border-b border-white/5 flex items-center px-4 shrink-0">
                   <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Explorer</span>
                 </div>
@@ -1620,9 +1652,13 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           onConfirm={(finalPrompt, confirmedTitle) => {
             setKickoffOpen(false);
             setProjectTitle(confirmedTitle);
-            handleGenerate(finalPrompt, pendingAttachments, true);
+            setKickoffDone(true);
+            handleGenerate(finalPrompt, pendingAttachments, true, confirmedTitle);
           }}
-          onCancel={() => setKickoffOpen(false)}
+          onCancel={() => {
+            setKickoffOpen(false);
+            setKickoffDone(true);
+          }}
         />
       )}
 
@@ -1782,14 +1818,10 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                               disabled={!!githubSyncConfig.lastSyncedFiles}
                               value={githubSyncConfig.repo}
                               onChange={e => setGithubSyncConfig(prev => ({ ...prev, repo: e.target.value }))}
-                              className={`w-full bg-black/50 border ${!isValidRepoName ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : 'border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/50'} rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 transition-all font-mono disabled:opacity-50 disabled:cursor-not-allowed`}
+                              className={`w-full bg-black/50 border ${!isValidRepoName ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : 'border-white/10 focus:border-emerald-500/50 focus:ring-emerald-500/50'} rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none transition-all font-mono disabled:opacity-50`}
                               placeholder="my-awesome-game"
                             />
-                            {!isValidRepoName ? (
-                              <p className="text-[10px] text-red-400 mt-1">Repository names can only contain alphanumeric characters, hyphens, and underscores.</p>
-                            ) : (
-                              <p className="text-[10px] text-zinc-500 mt-1">Will be created if it doesn't exist.</p>
-                            )}
+                            {!isValidRepoName && <p className="text-[10px] text-red-400 mt-1">Alpha-numeric, hyphens, and underscores only.</p>}
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-zinc-400 mb-1">Files to Sync</label>
@@ -1813,14 +1845,9 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                     })()
                   ) : (
                     <div className="text-center py-6">
-                      <p className="text-sm text-zinc-400 mb-4">Link your GitHub account to sync your project.</p>
-                      <button
-                        type="button"
-                        onClick={handleLinkGithub}
-                        className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-zinc-200 transition-colors flex items-center gap-2 mx-auto"
-                      >
-                        <Github className="w-4 h-4" />
-                        Link GitHub Account
+                      <p className="text-sm text-zinc-400 mb-4">Link GitHub to sync your code.</p>
+                      <button type="button" onClick={handleLinkGithub} className="px-4 py-2 bg-white text-black rounded-lg text-sm font-medium hover:bg-zinc-200 transition-colors flex items-center gap-2 mx-auto">
+                        <Github className="w-4 h-4" /> Link Account
                       </button>
                     </div>
                   )}
@@ -1834,44 +1861,17 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 )}
                 
                 <div className="flex gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setGithubSyncConfig(prev => ({ ...prev, isOpen: false }))}
-                    className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
-                  >
+                  <button type="button" onClick={() => setGithubSyncConfig(prev => ({ ...prev, isOpen: false }))} className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors">
                     Cancel
                   </button>
                   {githubSyncConfig.token && (
-                    (() => {
-                      const isValidRepoName = githubSyncConfig.repo.length > 0 && /^[a-zA-Z0-9_.-]+$/.test(githubSyncConfig.repo);
-                      const filesToSync = getFilesToSync();
-                      const hasChanges = Object.keys(filesToSync).length > 0;
-                      
-                      return (
-                        <button 
-                          type="submit"
-                          disabled={githubSyncConfig.isSyncing || !isValidRepoName || !hasChanges}
-                          className="flex-1 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors border border-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          {githubSyncConfig.isSyncing ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              Syncing...
-                            </>
-                          ) : !hasChanges ? (
-                            <>
-                              <CheckCircle2 className="w-4 h-4" />
-                              Up to date
-                            </>
-                          ) : (
-                            <>
-                              <Github className="w-4 h-4" />
-                              Sync Project
-                            </>
-                          )}
-                        </button>
-                      );
-                    })()
+                    <button 
+                      type="submit"
+                      disabled={githubSyncConfig.isSyncing || Object.keys(getFilesToSync()).length === 0}
+                      className="flex-1 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors border border-emerald-500/20 disabled:opacity-50"
+                    >
+                      {githubSyncConfig.isSyncing ? 'Syncing...' : 'Sync Project'}
+                    </button>
                   )}
                 </div>
               </form>
@@ -1894,24 +1894,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   <AlertTriangle className="w-6 h-6" />
                   <h3 className="text-lg font-semibold text-white">Confirm Deletion</h3>
                 </div>
-                <p className="text-zinc-400 mb-6 text-sm leading-relaxed">
-                  Are you sure you want to delete <span className="text-zinc-200 font-mono bg-white/5 px-1.5 py-0.5 rounded">{dialogConfig.path}</span>? 
-                  {dialogConfig.type === 'deleteFolder' && " This will also delete all its contents."}
-                  <br/><br/>This action cannot be undone.
+                <p className="text-zinc-400 mb-6 text-sm">
+                  Delete <span className="text-zinc-200 font-mono bg-white/5 px-1">{dialogConfig.path}</span>? This cannot be undone.
                 </p>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => setDialogConfig({ type: null, path: '' })}
-                    className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={() => executeDialogAction()}
-                    className="flex-1 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm font-medium transition-colors border border-red-500/20"
-                  >
-                    Delete
-                  </button>
+                  <button onClick={() => setDialogConfig({ type: null, path: '' })} className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium">Cancel</button>
+                  <button onClick={() => executeDialogAction()} className="flex-1 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm font-medium border border-red-500/20">Delete</button>
                 </div>
               </>
             ) : (
@@ -1921,119 +1909,59 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 executeDialogAction(formData.get('value') as string);
               }}>
                 <h3 className="text-lg font-semibold text-white mb-4">
-                  {dialogConfig.type === 'renameFile' && 'Rename File'}
-                  {dialogConfig.type === 'renameFolder' && 'Rename Folder'}
-                  {dialogConfig.type === 'moveFile' && 'Move File'}
+                  {dialogConfig.type === 'renameFile' ? 'Rename File' : dialogConfig.type === 'renameFolder' ? 'Rename Folder' : 'Move File'}
                 </h3>
-                <div className="mb-6">
-                  <label className="block text-xs font-medium text-zinc-500 mb-2 uppercase tracking-wider">
-                    {dialogConfig.type.startsWith('rename') ? 'New Name' : 'New Path'}
-                  </label>
-                  <input 
-                    autoFocus
-                    name="value"
-                    defaultValue={dialogConfig.initialValue}
-                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
-                    placeholder={dialogConfig.type.startsWith('rename') ? 'name.ext' : 'path/to/file.ext'}
-                  />
-                </div>
+                <input 
+                  autoFocus
+                  name="value"
+                  defaultValue={dialogConfig.initialValue}
+                  className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 mb-6 outline-none font-mono"
+                />
                 <div className="flex gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setDialogConfig({ type: null, path: '' })}
-                    className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit"
-                    className="flex-1 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors border border-emerald-500/20"
-                  >
-                    {dialogConfig.type.startsWith('rename') ? 'Rename' : 'Move'}
-                  </button>
+                  <button type="button" onClick={() => setDialogConfig({ type: null, path: '' })} className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium">Cancel</button>
+                  <button type="submit" className="flex-1 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium border border-emerald-500/20">Apply</button>
                 </div>
               </form>
             )}
           </motion.div>
         </div>
       )}
+
       {/* Enhance Modal */}
       {enhanceModal !== 'closed' && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
-          >
-            {/* Header */}
+          <motion.div initial={{ opacity: 0, scale: 0.95, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
               <div className="flex items-center gap-2">
                 <Wand2 className="w-4 h-4 text-emerald-400" />
                 <span className="text-sm font-semibold text-zinc-100">Enhance your idea</span>
               </div>
-              <button
-                onClick={() => setEnhanceModal('closed')}
-                className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={() => setEnhanceModal('closed')} className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"><X className="w-4 h-4" /></button>
             </div>
 
-            {/* Original idea pill */}
-            <div className="px-6 pt-4">
-              <p className="text-[11px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">Your idea</p>
-              <p className="text-sm text-zinc-300 bg-zinc-800/60 rounded-xl px-3 py-2 border border-zinc-700 line-clamp-2">{prompt}</p>
-            </div>
-
-            {/* Loading state */}
-            {enhanceModal === 'loading' && (
+            {enhanceModal === 'loading' ? (
               <div className="flex flex-col items-center gap-3 py-12 px-6">
                 <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
-                <p className="text-sm text-zinc-400">Thinking about your game...</p>
+                <p className="text-sm text-zinc-400">Analyzing vision...</p>
               </div>
-            )}
-
-            {/* Questions */}
-            {enhanceModal === 'questions' && (
+            ) : enhanceModal === 'questions' ? (
               <div className="px-6 py-4 space-y-4">
-                <p className="text-xs text-zinc-400 mt-1">Answer a few quick questions so I can write the perfect prompt. All fields are optional.</p>
+                <p className="text-xs text-zinc-400">Answer these to perfect the prompt.</p>
                 {enhanceQuestions.map((q, i) => (
                   <div key={q.id} className="space-y-1.5">
-                    <label className="text-sm font-medium text-zinc-200">
-                      <span className="text-emerald-500 mr-1.5">{i + 1}.</span>{q.question}
-                    </label>
-                    <input
-                      type="text"
-                      value={enhanceAnswers[q.id] || ''}
-                      onChange={e => setEnhanceAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                      placeholder={q.placeholder}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
-                    />
+                    <label className="text-sm font-medium text-zinc-200"><span className="text-emerald-500 mr-1.5">{i + 1}.</span>{q.question}</label>
+                    <input type="text" value={enhanceAnswers[q.id] || ''} onChange={e => setEnhanceAnswers(prev => ({ ...prev, [q.id]: e.target.value }))} placeholder={q.placeholder} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/60" />
                   </div>
                 ))}
                 <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={() => setEnhanceModal('closed')}
-                    className="flex-1 py-2 text-sm text-zinc-400 hover:text-zinc-200 bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleEnhanceFinalize}
-                    className="flex-1 py-2 text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-xl transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Wand2 className="w-3.5 h-3.5" />
-                    Enhance Prompt
-                  </button>
+                  <button onClick={() => setEnhanceModal('closed')} className="flex-1 py-2 text-sm text-zinc-400 bg-zinc-800 rounded-xl font-medium">Cancel</button>
+                  <button onClick={handleEnhanceFinalize} className="flex-1 py-2 text-sm font-semibold bg-emerald-500 text-zinc-950 rounded-xl">Enhance Prompt</button>
                 </div>
               </div>
-            )}
-
-            {/* Finalizing state */}
-            {enhanceModal === 'finalizing' && (
+            ) : (
               <div className="flex flex-col items-center gap-3 py-12 px-6">
                 <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
-                <p className="text-sm text-zinc-400">Writing your enhanced prompt...</p>
+                <p className="text-sm text-zinc-400">Re-writing prompt...</p>
               </div>
             )}
           </motion.div>
