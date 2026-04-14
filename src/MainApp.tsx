@@ -727,6 +727,15 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     if (isGenerating) return; 
     if (!promptToUse.trim() && attachmentsToUse.length === 0) return;
     
+    // Check if unauthenticated user already used their 1 free generation
+    if (!user) {
+      const hasGenerated = localStorage.getItem('gb_guest_generated');
+      if (hasGenerated === 'true' || files) {
+        onRequireAuth();
+        return;
+      }
+    }
+
     const isManualTrigger = promptToUse === prompt;
     const currentTitle = explicitTitle !== undefined ? explicitTitle : projectTitle;
 
@@ -897,10 +906,11 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           if (added.length || removed.length) diffs[path] = { added, removed };
         }
       }
-      setFileDiffs(diffs);
+setFileDiffs(diffs);
 
       if (!user) {
-        addLog('Sign in to save your game to your dashboard.', 'system');
+        localStorage.setItem('gb_guest_generated', 'true');
+        addLog('Sign in to save your game to your dashboard and unlock revisions.', 'system');
       }
 
       if (user) {
