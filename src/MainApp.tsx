@@ -76,6 +76,8 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
   const [isEmulatorFullscreen, setIsEmulatorFullscreen] = useState(false);
   const [bgWarning, setBgWarning] = useState(false); // tab went background during generation
+  const [savedIndicator, setSavedIndicator] = useState(false);
+  const savedIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [githubSyncConfig, setGithubSyncConfig] = useState<{
     isOpen: boolean;
     token: string;
@@ -834,11 +836,16 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       } catch (streamError: any) {
         if (streamError?.message === 'INSUFFICIENT_CREDITS') throw streamError;
         if (streamError?.name === 'AbortError') throw streamError;
-        console.warn("Streaming failed, falling back to non-streaming...", streamError);
-        setLogs(prev => prev.map(log => log.id === logId ? { ...log, text: 'Streaming failed, falling back to standard generation...' } : log));
-        finalFiles = await generateGameCode(finalPromptToUse, files || undefined, attachmentsToUse, abortController.signal);
+        // If we already received the files object before the stream hiccuped, use them
+        if (finalFiles) {
+          console.warn("Stream ended with error but files were received — using them.", streamError);
+        } else {
+          console.warn("Streaming failed, falling back to non-streaming...", streamError);
+          setLogs(prev => prev.map(log => log.id === logId ? { ...log, text: 'Streaming failed, falling back to standard generation...' } : log));
+          finalFiles = await generateGameCode(finalPromptToUse, files || undefined, attachmentsToUse, abortController.signal);
+        }
       }
-      
+
       if (!finalFiles) throw new Error("No files generated");
 
       const finalFilesWithStatus = Object.keys(finalFiles).map(name => {
@@ -1480,7 +1487,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   [{log.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]
                 </span>
                 <span className="text-zinc-600 shrink-0 mt-0.5">{'>'}</span>
-                <span className={`flex-1 whitespace-pre-wrap break-words ${
+                <span className={`flex-1 break-words min-w-0 ${
                   log.type === 'error' ? 'text-red-400' :
                   log.type === 'success' ? 'text-emerald-400' :
                   log.type === 'system' ? 'text-zinc-300' :
@@ -1488,7 +1495,28 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   log.type === 'generation-progress' ? 'text-emerald-400 font-semibold' :
                   'text-zinc-500'
                 }`}>
-                  {log.text}
+                  {log.text.split('\n').map((line, li) => {
+                    const bullet = line.match(/^(\s*)([-*•])\s+(.+)/);
+                    const numbered = line.match(/^(\s*)(\d+)\.\s+(.+)/);
+                    if (bullet) {
+                      return (
+                        <span key={li} className="flex items-start gap-1.5 mt-0.5">
+                          <span className="shrink-0 mt-0.5 opacity-60">·</span>
+                          <span>{bullet[3]}</span>
+                        </span>
+                      );
+                    }
+                    if (numbered) {
+                      return (
+                        <span key={li} className="flex items-start gap-1.5 mt-0.5">
+                          <span className="shrink-0 opacity-60 tabular-nums">{numbered[2]}.</span>
+                          <span>{numbered[3]}</span>
+                        </span>
+                      );
+                    }
+                    if (line.trim() === '') return <span key={li} className="block h-1" />;
+                    return <span key={li} className="block whitespace-pre-wrap">{line}</span>;
+                  })}
                 </span>
                 {log.type === 'revision' && log.snapshot && (
                   <button
@@ -2045,6 +2073,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        {/* Auto-save indicator */}
+                        {savedIndicator && (
+                          <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full transition-all">
+                            <CheckCircle2 className="w-3 h-3" /> Saved
+                          </span>
+                        )}
                         <button
                           onClick={() => handleCopyFile(selectedFile)}
                           className="p-1.5 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors"
@@ -2070,6 +2104,10 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                         onChange={(value) => {
                           if (value !== undefined) {
                             setFiles(prev => prev ? { ...prev, [selectedFile]: value } : prev);
+                            // Show "Saved" indicator
+                            setSavedIndicator(true);
+                            if (savedIndicatorTimerRef.current) clearTimeout(savedIndicatorTimerRef.current);
+                            savedIndicatorTimerRef.current = setTimeout(() => setSavedIndicator(false), 2000);
                           }
                         }}
                         options={{
