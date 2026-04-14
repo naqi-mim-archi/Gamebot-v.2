@@ -1529,7 +1529,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
           <div className="shrink-0 p-4 border-t border-white/5 bg-zinc-950/80 flex flex-col gap-2">
             {(attachments.length > 0 || focusPoint) && (
               <div className="flex flex-wrap gap-2 mb-2">
-                {/* Focus Target Badge */}
+               {/* Focus Target Badge */}
                 {focusPoint && (
                   <div className="flex items-center gap-2 bg-blue-500/10 text-blue-300 text-xs px-2.5 py-1.5 rounded-md border border-blue-500/30">
                     <Crosshair className="w-3.5 h-3.5 text-blue-400 shrink-0" />
@@ -1537,6 +1537,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                     <span className="truncate max-w-[150px] sm:max-w-[200px]" title={`${focusPoint.element} (${focusPoint.x}%, ${focusPoint.y}%)`}>
                       {focusPoint.element}
                     </span>
+                    {/* NEW: Camera icon to confirm image was captured */}
+                    {focusPoint.imageBase64 && (
+                      <span title="Visual context captured" className="flex items-center">
+                        <Camera className="w-3.5 h-3.5 text-blue-400/80 shrink-0" />
+                      </span>
+                    )}
                     <button onClick={() => setFocusPoint(null)} className="hover:text-red-400 ml-1 shrink-0 transition-colors">
                       <X className="w-3.5 h-3.5" />
                     </button>
