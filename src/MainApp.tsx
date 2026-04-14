@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench, Share2, LayoutTemplate } from 'lucide-react';
+import { Camera, Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench, Share2, LayoutTemplate, Crosshair } from 'lucide-react';
 
 function DiscordIcon({ className }: { className?: string }) {
   return (
@@ -28,6 +28,9 @@ type LogEntry = {
   timestamp: Date;
   snapshot?: FileSystem;
   files?: { name: string, status: 'generating' | 'success' | 'error', errorMsg?: string }[];
+  retryPrompt?: string;
+  retryAttachments?: FileAttachment[];
+  attachments?: FileAttachment[];
 };
 
 export interface MainAppProps {
@@ -71,6 +74,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     initialValue?: string;
   }>({ type: null, path: '' });
   const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
+  const [isEmulatorFullscreen, setIsEmulatorFullscreen] = useState(false);
   const [githubSyncConfig, setGithubSyncConfig] = useState<{
     isOpen: boolean;
     token: string;
@@ -106,8 +110,19 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const [savedGamePrompt, setSavedGamePrompt] = useState('');
   const [titleError, setTitleError] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const sessionGameIdRef = useRef<string | null>(null);
   const TEMP_SESSION_KEY = 'logs_current_session';
+
+  // Feature 3: Focus Mode
+  const [focusModeActive, setFocusModeActive] = useState(false);
+  const [focusPoint, setFocusPoint] = useState<{x: number; y: number; element?: string; imageBase64?: string} | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+
+  // Feature 5: Code Diff Tracking
+  const [fileDiffs, setFileDiffs] = useState<Record<string, { added: number[]; removed: number[] }>>({});
+  const previousFilesRef = useRef<FileSystem | null>(null);
+  const editorRef = useRef<any>(null);
 
   // Sync GitHub token from Firestore when userProfile loads/changes
   useEffect(() => {
@@ -139,6 +154,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const hasRunInitial = useRef(false);
   const isDraggingResizer = useRef(false);
   const [terminalStep, setTerminalStep] = useState(0);
@@ -163,6 +179,23 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     }
     return () => clearInterval(interval);
   }, [isGenerating]);
+
+  // Feature 5: Apply Monaco diff decorations when selected file or diffs change
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !selectedFile || !fileDiffs[selectedFile]) return;
+    const { added } = fileDiffs[selectedFile];
+    const decorations = added.map(lineNum => ({
+      range: (window as any).monaco ? new (window as any).monaco.Range(lineNum, 1, lineNum, 1) : { startLineNumber: lineNum, startColumn: 1, endLineNumber: lineNum, endColumn: 1 },
+      options: {
+        isWholeLine: true,
+        className: 'bg-emerald-500/10',
+        glyphMarginClassName: 'border-l-2 border-emerald-500',
+        overviewRuler: { color: '#10b981', position: 1 },
+      }
+    }));
+    editor.deltaDecorations([], decorations);
+  }, [selectedFile, fileDiffs]);
 
   useEffect(() => {
     if (loadGame && !hasRunInitial.current) {
@@ -287,20 +320,154 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   };
 
   const handleFullscreen = () => {
-    if (iframeRef.current) {
-      const elem = iframeRef.current;
-      if (elem.requestFullscreen) {
-        elem.requestFullscreen();
-      } else if ((elem as any).webkitRequestFullscreen) {
-        (elem as any).webkitRequestFullscreen();
-      } else if ((elem as any).webkitEnterFullscreen) {
-        (elem as any).webkitEnterFullscreen();
-      } else {
-        // Fallback for iOS iPhone
-        setIsPseudoFullscreen(true);
-      }
+    // Tablet / mobile: show the emulator frame overlay (preserves device bezel)
+    if (deviceView === 'tablet' || deviceView === 'mobile') {
+      setIsEmulatorFullscreen(true);
+      return;
+    }
+    // Desktop: try native fullscreen on the preview container, fall back to pseudo
+    const el = previewContainerRef.current || iframeRef.current;
+    if (!el) return;
+    if (el.requestFullscreen) {
+      el.requestFullscreen();
+    } else if ((el as any).webkitRequestFullscreen) {
+      (el as any).webkitRequestFullscreen();
+    } else if ((el as any).webkitEnterFullscreen) {
+      (el as any).webkitEnterFullscreen();
+    } else {
+      setIsPseudoFullscreen(true);
     }
   };
+
+  // Feature 3: Focus Mode — inject element-picker directly into iframe DOM
+  useEffect(() => {
+    if (!focusModeActive) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const timer = setTimeout(() => {
+      const doc = iframe.contentDocument;
+      if (!doc || !doc.body) return;
+
+      // Inject highlight style + cursor
+      const style = doc.createElement('style');
+      style.id = '__gb_focus_style';
+      style.textContent = `
+        * { cursor: crosshair !important; user-select: none !important; }
+        .__gb_hovered { outline: 2px solid #3b82f6 !important; outline-offset: 1px !important; }
+        #__gb_label {
+          position: fixed !important; background: #3b82f6 !important; color: #fff !important;
+          font-size: 10px !important; font-family: monospace !important; font-weight: 700 !important;
+          padding: 1px 6px !important; border-radius: 3px !important; pointer-events: none !important;
+          z-index: 2147483647 !important; white-space: nowrap !important;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.5) !important; display: none;
+        }
+      `;
+      doc.head.appendChild(style);
+
+      const labelEl = doc.createElement('div');
+      labelEl.id = '__gb_label';
+      doc.body.appendChild(labelEl);
+
+      let hoveredEl: Element | null = null;
+
+      const getDesc = (el: Element): string => {
+        const tag = el.tagName.toLowerCase();
+        const id = el.id ? `#${el.id}` : '';
+        const raw = typeof el.className === 'string' ? el.className.trim() : '';
+        const cls = raw ? '.' + raw.split(/\s+/).filter(c => !c.startsWith('__gb')).slice(0, 2).join('.') : '';
+        return `${tag}${id}${cls}`;
+      };
+
+      const onMouseMove = (e: MouseEvent) => {
+        const target = e.target as Element;
+        if (!target || target === doc.body || target === doc.documentElement || target.id === '__gb_label') return;
+        if (hoveredEl && hoveredEl !== target) hoveredEl.classList.remove('__gb_hovered');
+        target.classList.add('__gb_hovered');
+        hoveredEl = target;
+        labelEl.textContent = getDesc(target);
+        labelEl.style.display = 'block';
+        const lx = Math.min(e.clientX + 4, (doc.documentElement.clientWidth || 9999) - 120);
+        const ly = Math.max(e.clientY - 22, 2);
+        labelEl.style.left = `${lx}px`;
+        labelEl.style.top = `${ly}px`;
+      };
+
+      const onMouseLeave = () => {
+        if (hoveredEl) hoveredEl.classList.remove('__gb_hovered');
+        hoveredEl = null;
+        labelEl.style.display = 'none';
+      };
+
+     const onClick = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = e.target as Element;
+        if (!target || target.id === '__gb_label') return;
+        const rect = target.getBoundingClientRect();
+        const dw = doc.documentElement.clientWidth || 1;
+        const dh = doc.documentElement.clientHeight || 1;
+        
+        let cx, cy;
+        if (target.tagName.toLowerCase() === 'canvas') {
+          cx = Math.round((e.clientX / dw) * 100);
+          cy = Math.round((e.clientY / dh) * 100);
+        } else {
+          cx = Math.round(((rect.left + rect.width / 2) / dw) * 100);
+          cy = Math.round(((rect.top + rect.height / 2) / dh) * 100);
+        }
+
+        const desc = getDesc(target);
+        const text = target.textContent?.trim().replace(/\s+/g, ' ').substring(0, 40);
+        const elementDesc = text ? `${desc} ("${text}")` : desc;
+        
+        // --- NEW: SILENTLY CAPTURE THE SCREENSHOT ---
+        let imageBase64 = undefined;
+        try {
+          const canvasEl = target.tagName.toLowerCase() === 'canvas' ? target : doc.querySelector('canvas');
+          if (canvasEl) {
+            // Grab a high-quality JPEG of the current game frame
+            const dataUrl = (canvasEl as HTMLCanvasElement).toDataURL('image/jpeg', 0.8);
+            imageBase64 = dataUrl.split(',')[1]; // Remove the data URI prefix so Gemini can read it
+          }
+        } catch (err) {
+          console.warn("Could not capture canvas screenshot", err);
+        }
+        // --------------------------------------------
+
+        cleanup();
+        setFocusPoint({ x: cx, y: cy, element: elementDesc, imageBase64 });
+        setFocusModeActive(false);
+
+        // Automatically focus the chat input so you can start typing right away
+        setTimeout(() => {
+          promptInputRef.current?.focus();
+        }, 50);
+      };
+
+      const cleanup = () => {
+        try {
+          doc.removeEventListener('mousemove', onMouseMove, true);
+          doc.removeEventListener('mouseleave', onMouseLeave, true);
+          doc.removeEventListener('click', onClick, true);
+          if (hoveredEl) hoveredEl.classList.remove('__gb_hovered');
+          style.remove();
+          labelEl.remove();
+        } catch { /* iframe may have navigated */ }
+      };
+
+      doc.addEventListener('mousemove', onMouseMove, true);
+      doc.addEventListener('mouseleave', onMouseLeave, true);
+      doc.addEventListener('click', onClick, true);
+      (iframe as any).__gbFocusCleanup = cleanup;
+    }, 50);
+
+    return () => {
+      clearTimeout(timer);
+      const cleanup = (iframeRef.current as any)?.__gbFocusCleanup;
+      if (cleanup) { cleanup(); delete (iframeRef.current as any).__gbFocusCleanup; }
+    };
+  }, [focusModeActive]);
 
   useEffect(() => {
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
@@ -342,32 +509,78 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     }
   };
 
+  const getMimeType = (file: File): string => {
+    if (file.type && file.type !== 'application/octet-stream') return file.type;
+    // Detect from extension when browser doesn't provide MIME type
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const map: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
+      svg: 'image/svg+xml', pdf: 'application/pdf',
+      txt: 'text/plain', json: 'application/json',
+    };
+    return map[ext || ''] || 'application/octet-stream';
+  };
+
+  // Compress images before base64-encoding to stay under Vercel's 4.5MB body limit.
+  // Max dimension 1024px, JPEG quality 0.75. Non-image files are passed through as-is.
+  const compressImage = (file: File): Promise<{ data: string; mimeType: string }> => {
+    return new Promise((resolve) => {
+      const mimeType = getMimeType(file);
+      const isImage = mimeType.startsWith('image/');
+
+      if (!isImage) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve({ data: result.split(',')[1], mimeType });
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 1024;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width >= height) { height = Math.round((height / width) * MAX); width = MAX; }
+          else { width = Math.round((width / height) * MAX); height = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        // Always output as JPEG for maximum compression (except PNGs with transparency keep PNG)
+        const outMime = mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+        const quality = outMime === 'image/jpeg' ? 0.75 : undefined;
+        const dataUrl = canvas.toDataURL(outMime, quality);
+        resolve({ data: dataUrl.split(',')[1], mimeType: outMime });
+      };
+      img.onerror = () => {
+        // Fallback: read raw if canvas fails
+        URL.revokeObjectURL(url);
+        const reader = new FileReader();
+        reader.onload = () => resolve({ data: (reader.result as string).split(',')[1], mimeType });
+        reader.readAsDataURL(file);
+      };
+      img.src = url;
+    });
+  };
+
   const processFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
 
     const newAttachments: FileAttachment[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const reader = new FileReader();
-      
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          const base64 = result.split(',')[1];
-          resolve(base64);
-        };
-      });
-      
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
-      
-      newAttachments.push({
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        data: base64Data
-      });
+      const { data, mimeType } = await compressImage(file);
+      newAttachments.push({ name: file.name, mimeType, data });
     }
-    
+
     setAttachments(prev => [...prev, ...newAttachments]);
   };
 
@@ -446,6 +659,15 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     }
   }, [logs]);
 
+  // Close emulator fullscreen on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsEmulatorFullscreen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   useEffect(() => {
     const handleClickOutside = () => {
       if (menuOpenPath) {
@@ -480,7 +702,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       return;
     }
 
-    // Checking the immediate variable, not the state that might be delayed
     if (!files && !currentTitle.trim() && isManualTrigger && !skipKickoff) {
       setTitleError(true);
       titleInputRef.current?.focus();
@@ -488,36 +709,67 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       return;
     }
 
-    // Spin-offs have files pre-loaded but savedGameId=null — treat as new game for cost
     const isNewGame = !files || Object.keys(files).length === 0 || !savedGameId;
     const cost = isNewGame ? 5 : 1;
+
+    // Feature 5: Store current files for diff tracking
+    previousFilesRef.current = files ? { ...files } : null;
+
+    // Feature 3: Prepend focus context and attach screenshot if a focus point is set
+    let finalPromptToUse = promptToUse;
+    let finalAttachments = [...attachmentsToUse]; // Copy so we don't mutate state directly
+
+    if (focusPoint && files) {
+      const loc = focusPoint.element
+        ? `the ${focusPoint.element} element at approximately ${focusPoint.x}% from left, ${focusPoint.y}% from top`
+        : `the area at approximately ${focusPoint.x}% from left, ${focusPoint.y}% from top`;
+      
+      // Tell the AI to actually look at the screenshot!
+      finalPromptToUse = `[Focus changes on ${loc}. Look at the attached screenshot to see exactly what I am referring to.]: ${promptToUse}`;
+      
+      if (focusPoint.imageBase64) {
+        finalAttachments.push({
+          name: 'target_screenshot.jpg',
+          mimeType: 'image/jpeg',
+          data: focusPoint.imageBase64
+        });
+      }
+    }
+    // Clear the focus point after generation starts
+    setFocusPoint(null);
 
     setIsGenerating(true);
     setPrompt('');
     setAttachments([]);
-    addLog(`User prompt: "${promptToUse}"`, 'system');
-    if (attachmentsToUse.length > 0) {
-      addLog(`Attached ${attachmentsToUse.length} file(s)`, 'system');
-    }
+    addLog(`User prompt: "${finalPromptToUse}"`, 'system');
     
+    // Log attachments (which will now include our silent screenshot)
+    if (finalAttachments.length > 0) {
+      const attachLogId = Math.random().toString(36).substring(7);
+      setLogs(prev => [...prev, {
+        id: attachLogId,
+        text: `Attached ${finalAttachments.length} file(s)`,
+        type: 'system',
+        timestamp: new Date(),
+        attachments: finalAttachments,
+      }]);
+    }
+
     const logId = Math.random().toString(36).substring(7);
-    setLogs(prev => [...prev, { 
-      id: logId, 
-      text: 'Thinking & Generating...', 
-      type: 'generation-progress', 
+    setLogs(prev => [...prev, {
+      id: logId,
+      text: 'Thinking & Generating...',
+      type: 'generation-progress',
       timestamp: new Date(),
       files: []
     }]);
-    
-    try {
-      if (!user) {
-        onRequireAuth(); 
-        addLog('Please login first', 'error');
-        setIsGenerating(false);
-        return;
-      }
 
-      const stream = generateGameCodeStream(promptToUse, files || undefined, attachmentsToUse);
+    // Create a fresh AbortController for this generation
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    try {
+      const stream = generateGameCodeStream(finalPromptToUse, files || undefined, attachmentsToUse, abortController.signal);
       let finalFiles: FileSystem | null = null;
 
       try {
@@ -547,9 +799,10 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         }
       } catch (streamError: any) {
         if (streamError?.message === 'INSUFFICIENT_CREDITS') throw streamError;
+        if (streamError?.name === 'AbortError') throw streamError;
         console.warn("Streaming failed, falling back to non-streaming...", streamError);
         setLogs(prev => prev.map(log => log.id === logId ? { ...log, text: 'Streaming failed, falling back to standard generation...' } : log));
-        finalFiles = await generateGameCode(promptToUse, files || undefined, attachmentsToUse);
+        finalFiles = await generateGameCode(finalPromptToUse, files || undefined, attachmentsToUse, abortController.signal);
       }
       
       if (!finalFiles) throw new Error("No files generated");
@@ -584,6 +837,30 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       
       setFiles(finalFiles);
       setActiveTab('preview');
+
+      // Feature 5: Compute diffs after generation
+      const diffs: Record<string, { added: number[]; removed: number[] }> = {};
+      if (previousFilesRef.current) {
+        for (const [path, newContent] of Object.entries(finalFiles)) {
+          const oldContent = previousFilesRef.current[path] || '';
+          const oldLines = oldContent.split('\n');
+          const newLines = newContent.split('\n');
+          const added: number[] = [];
+          const removed: number[] = [];
+          newLines.forEach((line, i) => {
+            if (i >= oldLines.length || line !== oldLines[i]) added.push(i + 1);
+          });
+          oldLines.forEach((line, i) => {
+            if (i >= newLines.length || line !== newLines[i]) removed.push(i + 1);
+          });
+          if (added.length || removed.length) diffs[path] = { added, removed };
+        }
+      }
+      setFileDiffs(diffs);
+
+      if (!user) {
+        addLog('Sign in to save your game to your dashboard.', 'system');
+      }
 
       if (user) {
         try {
@@ -621,27 +898,35 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         }
       }
 
-      addLog(`AI Revision: "${promptToUse}"`, 'revision', finalFiles);
+      addLog(`AI Revision: "${finalPromptToUse}"`, 'revision', finalFiles);
       addLog('Game generated successfully!', 'success');
     } catch (error: any) {
-      if (error?.message === 'INSUFFICIENT_CREDITS') {
+      if (error?.name === 'AbortError') {
+        // User stopped generation — mark in-progress files as cancelled, no retry button
+        setLogs(prev => prev.map(log => log.id === logId ? {
+          ...log,
+          text: 'Generation stopped.',
+          files: log.files?.map(f => f.status === 'generating' ? { ...f, status: 'error', errorMsg: 'Stopped' } : f),
+        } : log));
+      } else if (error?.message === 'INSUFFICIENT_CREDITS') {
         showOutOfCreditsModal(cost);
-        setLogs(prev => prev.map(log => log.id === logId ? { 
-          ...log, 
+        setLogs(prev => prev.map(log => log.id === logId ? {
+          ...log,
           text: 'Insufficient credits.',
           files: log.files?.map(f => f.status === 'generating' ? { ...f, status: 'error', errorMsg: 'Cancelled' } : f)
         } : log));
       } else {
         console.error(error);
-        // FIX: Ensure spinning loaders turn to red errors when generation fails
-        setLogs(prev => prev.map(log => log.id === logId ? { 
-          ...log, 
+        setLogs(prev => prev.map(log => log.id === logId ? {
+          ...log,
           text: `Generation failed${error?.message ? `: ${error.message}` : '.'}`,
-          files: log.files?.map(f => f.status === 'generating' ? { ...f, status: 'error', errorMsg: 'Generation failed' } : f)
+          files: log.files?.map(f => f.status === 'generating' ? { ...f, status: 'error', errorMsg: 'Generation failed' } : f),
+          retryPrompt: finalPromptToUse,
+          retryAttachments: attachmentsToUse,
         } : log));
-        // addLog(`Generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       }
     } finally {
+      abortControllerRef.current = null;
       setIsGenerating(false);
     }
   };
@@ -999,8 +1284,13 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
             <div className="flex items-center gap-2 overflow-hidden flex-1" onClick={() => setSelectedFile(node.path)}>
               <FileIcon className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{node.name}</span>
+              {fileDiffs[node.path] && (
+                <span className="ml-auto text-[9px] font-mono text-emerald-400/70 shrink-0">
+                  +{fileDiffs[node.path].added.length}
+                </span>
+              )}
             </div>
-            
+
             <div className="relative shrink-0">
               <button 
                 onClick={(e) => { e.stopPropagation(); setMenuOpenPath(isMenuOpen ? null : node.path); }}
@@ -1141,7 +1431,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   [{log.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]
                 </span>
                 <span className="text-zinc-600 shrink-0 mt-0.5">{'>'}</span>
-                <span className={`flex-1 ${
+                <span className={`flex-1 whitespace-pre-wrap break-words ${
                   log.type === 'error' ? 'text-red-400' :
                   log.type === 'success' ? 'text-emerald-400' :
                   log.type === 'system' ? 'text-zinc-300' :
@@ -1160,7 +1450,50 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                     <RefreshCw className="w-2.5 h-2.5" /> Restore
                   </button>
                 )}
+                {log.retryPrompt && !isGenerating && (
+                  <button
+                    onClick={() => handleGenerate(log.retryPrompt!, log.retryAttachments ?? [], true)}
+                    className="shrink-0 text-[10px] bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 hover:text-red-300 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                    title="Retry generation"
+                  >
+                    <RefreshCw className="w-2.5 h-2.5" /> Retry
+                  </button>
+                )}
               </div>
+              {/* Attachment previews */}
+              {log.attachments && log.attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-1 pl-16 pr-2">
+                  {log.attachments.map((att, i) => {
+                    const isImage = att.mimeType.startsWith('image/');
+                    return isImage ? (
+                      <a
+                        key={i}
+                        href={`data:${att.mimeType};base64,${att.data}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={att.name}
+                        className="block rounded-lg overflow-hidden border border-white/10 hover:border-white/30 transition-colors"
+                        style={{ width: 64, height: 48 }}
+                      >
+                        <img
+                          src={`data:${att.mimeType};base64,${att.data}`}
+                          alt={att.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </a>
+                    ) : (
+                      <div
+                        key={i}
+                        title={att.name}
+                        className="flex items-center gap-1.5 bg-zinc-900 border border-white/8 rounded-lg px-2 py-1.5 max-w-[140px]"
+                      >
+                        <FileText className="w-3 h-3 text-zinc-400 shrink-0" />
+                        <span className="text-zinc-400 text-[10px] truncate">{att.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               {log.type === 'generation-progress' && log.files && log.files.length > 0 && (
                 <div className="flex flex-col gap-1.5 w-full mt-1 pl-16 pr-2">
                   {log.files.map((f, i) => (
@@ -1194,10 +1527,24 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
           {/* Prompt Input — pinned at bottom */}
           <div className="shrink-0 p-4 border-t border-white/5 bg-zinc-950/80 flex flex-col gap-2">
-            {attachments.length > 0 && (
+            {(attachments.length > 0 || focusPoint) && (
               <div className="flex flex-wrap gap-2 mb-2">
+                {/* Focus Target Badge */}
+                {focusPoint && (
+                  <div className="flex items-center gap-2 bg-blue-500/10 text-blue-300 text-xs px-2.5 py-1.5 rounded-md border border-blue-500/30">
+                    <Crosshair className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span className="font-semibold text-blue-400">Targeting:</span>
+                    <span className="truncate max-w-[150px] sm:max-w-[200px]" title={`${focusPoint.element} (${focusPoint.x}%, ${focusPoint.y}%)`}>
+                      {focusPoint.element}
+                    </span>
+                    <button onClick={() => setFocusPoint(null)} className="hover:text-red-400 ml-1 shrink-0 transition-colors">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+                {/* Existing Attachment Badges */}
                 {attachments.map((file, index) => (
-                  <div key={index} className="flex items-center gap-2 bg-zinc-900 text-zinc-300 text-xs px-2 py-1 rounded-md border border-white/10">
+                   <div key={index} className="flex items-center gap-2 bg-zinc-900 text-zinc-300 text-xs px-2 py-1 rounded-md border border-white/10">
                     <FileText className="w-3 h-3 text-emerald-400" />
                     <span className="truncate max-w-[120px]">{file.name}</span>
                     <button onClick={() => removeAttachment(index)} className="hover:text-red-400 ml-1">
@@ -1209,12 +1556,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
             )}
             
             <div 
-              className={`relative rounded-2xl transition-all duration-300 ${isDragging ? 'ring-2 ring-emerald-500 bg-emerald-500/10' : 'glass-panel focus-within:glass-panel-active'}`}
-              onDragOver={handleDragOver}
+              className={`relative rounded-2xl transition-all duration-300 ${isDragging ? 'ring-2 ring-emerald-500 bg-emerald-500/10' : 'glass-panel focus-within:glass-panel-active'}`}              onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
               <textarea
+                ref={promptInputRef} 
                 value={prompt}
                 onChange={(e) => { setPrompt(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 320) + 'px'; }}
                 onKeyDown={handleKeyDown}
@@ -1262,18 +1609,25 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                 </button>
               </div>
 
-              <button
-                onClick={() => handleGenerate(prompt)}
-                disabled={isGenerating || (!prompt.trim() && attachments.length === 0) || (!files && !projectTitle.trim() && kickoffDone)}
-                className="absolute bottom-3 right-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-              >
-                {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                  <>
-                    <span className="hidden sm:inline">Generate</span>
-                    <Send className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              {isGenerating ? (
+                <button
+                  onClick={() => abortControllerRef.current?.abort()}
+                  className="absolute bottom-3 right-3 px-4 py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 hover:text-red-300 rounded-xl font-bold transition-all flex items-center gap-2"
+                  title="Stop generation"
+                >
+                  <X className="w-4 h-4" />
+                  <span className="hidden sm:inline">Stop</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleGenerate(prompt)}
+                  disabled={!prompt.trim() && attachments.length === 0 || (!files && !projectTitle.trim() && kickoffDone)}
+                  className="absolute bottom-3 right-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                >
+                  <span className="hidden sm:inline">Generate</span>
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
             </div>
             <div className="flex justify-between items-center px-2 mt-1">
               <p className="text-[10px] text-zinc-500 font-mono">
@@ -1342,12 +1696,23 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
-              <button 
+              <button
                 onClick={handleFullscreen}
                 className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
                 title="Fullscreen"
               >
                 <Maximize className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => { setFocusModeActive(v => !v); if (focusPoint) setFocusPoint(null); }}
+                title={focusModeActive ? 'Cancel Focus' : focusPoint ? 'Clear focus point (click to set new)' : 'Focus Mode — click a spot on the preview to target changes'}
+                className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                  focusModeActive ? 'bg-orange-500/20 border border-orange-500/30 text-orange-400' :
+                  focusPoint ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400' :
+                  'text-zinc-500 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Crosshair className="w-4 h-4" />
               </button>
               <div className="w-px h-6 bg-zinc-800 mx-0.5 sm:mx-1 shrink-0"></div>
               <button
@@ -1434,6 +1799,59 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
             </div>
           )}
 
+          {/* Emulator fullscreen overlay — tablet/mobile keeps device frame */}
+          {isEmulatorFullscreen && files && (
+            <div className="fixed inset-0 z-[200] bg-zinc-950 flex items-center justify-center">
+              <div className="absolute inset-0 bg-grid-pattern opacity-[0.04] pointer-events-none" />
+              {/* Close button */}
+              <button
+                onClick={() => setIsEmulatorFullscreen(false)}
+                className="absolute top-4 right-4 z-[201] p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors border border-white/10 backdrop-blur-md"
+                title="Exit fullscreen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              {/* Device frame */}
+              {deviceView === 'tablet' ? (
+                <div
+                  className="relative rounded-[2rem] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(0,0,0,0.9)]"
+                  style={{ height: '90vh', aspectRatio: '3/4' }}
+                >
+                  <iframe
+                    key="emulator-fs-tablet"
+                    srcDoc={bundleForPreview(files)}
+                    className="w-full h-full border-0 block bg-white"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
+                    allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
+                    allowFullScreen
+                    title="Game Preview — Tablet Fullscreen"
+                  />
+                </div>
+              ) : (
+                <div
+                  className="relative rounded-[2.5rem] overflow-hidden border-[10px] border-zinc-700 shadow-[0_0_80px_rgba(0,0,0,0.9)]"
+                  style={{ height: '90vh', aspectRatio: '9/19.5' }}
+                >
+                  {/* Phone notch */}
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-20 h-5 bg-zinc-700 rounded-b-2xl z-10" />
+                  <iframe
+                    key="emulator-fs-mobile"
+                    srcDoc={bundleForPreview(files)}
+                    className="w-full h-full border-0 block bg-white"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads"
+                    allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
+                    allowFullScreen
+                    title="Game Preview — Mobile Fullscreen"
+                  />
+                </div>
+              )}
+              {/* ESC hint */}
+              <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-xs text-zinc-600 select-none pointer-events-none">
+                Press <kbd className="text-zinc-500 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-0.5 text-[10px]">✕</kbd> to exit
+              </p>
+            </div>
+          )}
+
           {files && activeTab === 'preview' && (
             <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-[#050505]">
               <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none" />
@@ -1444,7 +1862,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                   <iframe key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'} ref={iframeRef} srcDoc={bundleForPreview(files)} className="w-full h-full border-0 block" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads" allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb" allowFullScreen title="Game Preview" />
                 </div>
               ) : deviceView === 'desktop' ? (
-                <div className="w-full h-full relative">
+                <div ref={previewContainerRef} className="w-full h-full relative">
                   <iframe
                     key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
                     ref={iframeRef}
@@ -1455,11 +1873,40 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                     allowFullScreen
                     title="Game Preview"
                   />
+                  {/* Focus mode — active hint banner (element picking happens inside iframe) */}
+                  {focusModeActive && (
+                    <div className="absolute top-2 left-2 right-2 z-30 text-center pointer-events-none">
+                      <span className="inline-block text-xs text-blue-300 bg-zinc-950/85 border border-blue-500/30 rounded-lg py-1 px-3 backdrop-blur-sm">
+                        Hover to highlight · Click an element to target it
+                      </span>
+                    </div>
+                  )}
+                  {/* Focus point indicator — shows element name badge */}
+                  {focusPoint && !focusModeActive && (
+                    <div
+                      className="absolute z-30 pointer-events-none"
+                      style={{ left: `${focusPoint.x}%`, top: `${focusPoint.y}%`, transform: 'translate(-50%, -100%) translateY(-6px)' }}
+                    >
+                      <div className="flex flex-col items-center gap-1">
+                        {focusPoint.element && (
+                          <span className="bg-blue-500 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap max-w-[200px] truncate">
+                            {focusPoint.element}
+                          </span>
+                        )}
+                        <div className="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_6px_2px_rgba(59,130,246,0.6)]" />
+                      </div>
+                    </div>
+                  )}
                   {!canRemoveWatermark && (
-                    <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
+                    <a
+                      href="https://gamebot.studio"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium z-50 flex items-center gap-2 border border-white/10 shadow-xl hover:bg-zinc-900/90 hover:border-white/20 transition-all cursor-pointer"
+                    >
                       <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                       Created with Game Bot
-                    </div>
+                    </a>
                   )}
                 </div>
               ) : deviceView === 'tablet' ? (
@@ -1475,10 +1922,15 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                     title="Game Preview"
                   />
                   {!canRemoveWatermark && (
-                    <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
+                    <a
+                      href="https://gamebot.studio"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium z-50 flex items-center gap-2 border border-white/10 shadow-xl hover:bg-zinc-900/90 hover:border-white/20 transition-all cursor-pointer"
+                    >
                       <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                       Created with Game Bot
-                    </div>
+                    </a>
                   )}
                 </div>
               ) : (
@@ -1494,10 +1946,15 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                     title="Game Preview"
                   />
                   {!canRemoveWatermark && (
-                    <div className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium pointer-events-none z-50 flex items-center gap-2 border border-white/10 shadow-xl">
+                    <a
+                      href="https://gamebot.studio"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium z-50 flex items-center gap-2 border border-white/10 shadow-xl hover:bg-zinc-900/90 hover:border-white/20 transition-all cursor-pointer"
+                    >
                       <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                       Created with Game Bot
-                    </div>
+                    </a>
                   )}
                 </div>
               )}
@@ -1568,6 +2025,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
                           scrollBeyondLastLine: false,
                           padding: { top: 16, bottom: 16 }
                         }}
+                        onMount={(editor) => { editorRef.current = editor; }}
                       />
                     </div>
                   </>

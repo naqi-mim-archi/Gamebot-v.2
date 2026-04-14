@@ -58,26 +58,25 @@ export async function finalizeEnhancedPrompt(
 export async function* generateGameCodeStream(
   prompt: string,
   previousFiles?: FileSystem,
-  files?: FileAttachment[]
+  files?: FileAttachment[],
+  signal?: AbortSignal
 ): AsyncGenerator<string | FileSystem, void, unknown> {
 
   const auth = getAuth();
   const user = auth.currentUser;
 
-  if (!user) {
-    throw new Error("User not logged in");
+  // Build headers — include auth token if logged in, skip if guest
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (user) {
+    const token = await user.getIdToken(true);
+    headers['Authorization'] = `Bearer ${token}`;
   }
-
-  // 🔥 FIX: Force refresh the token to ensure it's valid
-  const token = await user.getIdToken(true);
 
   const response = await fetch('/api/generate/stream', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify({ prompt, previousFiles, files }),
+    signal,
   });
 
   if (response.status === 402) {
@@ -130,12 +129,13 @@ export async function* generateGameCodeStream(
 export async function generateGameCode(
   prompt: string,
   previousFiles?: FileSystem,
-  files?: FileAttachment[]
+  files?: FileAttachment[],
+  signal?: AbortSignal
 ): Promise<FileSystem> {
 
   let result: FileSystem | null = null;
 
-  for await (const chunk of generateGameCodeStream(prompt, previousFiles, files)) {
+  for await (const chunk of generateGameCodeStream(prompt, previousFiles, files, signal)) {
     if (typeof chunk !== 'string') {
       result = chunk;
     }

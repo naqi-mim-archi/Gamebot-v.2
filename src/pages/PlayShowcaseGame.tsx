@@ -54,6 +54,36 @@ export default function PlayShowcaseGame() {
   }, [id]);
 
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleFullscreen = async () => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    if (!document.fullscreenElement) {
+      try {
+        if (el.requestFullscreen) await el.requestFullscreen();
+        else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
+        else setIsFullscreen(true); // CSS fallback
+      } catch { setIsFullscreen(true); }
+    } else {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen();
+      else setIsFullscreen(false);
+    }
+  };
+
+  // Listen for native fullscreen change (ESC key etc)
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    document.addEventListener('webkitfullscreenchange', handler);
+    return () => {
+      document.removeEventListener('fullscreenchange', handler);
+      document.removeEventListener('webkitfullscreenchange', handler);
+    };
+  }, []);
+
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
@@ -131,7 +161,7 @@ export default function PlayShowcaseGame() {
             )}
           </button>
           <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
+            onClick={handleFullscreen}
             className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
             title="Toggle Fullscreen"
           >
@@ -141,7 +171,7 @@ export default function PlayShowcaseGame() {
       </header>
 
       {/* Game Container */}
-      <main className={`flex-1 flex items-center justify-center p-4 sm:p-6 z-10 ${isFullscreen ? 'fixed inset-0 z-50 bg-black p-0' : ''}`}>
+      <main ref={containerRef} className={`flex-1 flex items-center justify-center p-4 sm:p-6 z-10 ${isFullscreen ? 'fixed inset-0 z-50 bg-black p-0' : ''}`}>
         {isFullscreen && (
           <button 
             onClick={() => setIsFullscreen(false)}
