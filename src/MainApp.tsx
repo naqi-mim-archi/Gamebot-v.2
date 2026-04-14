@@ -75,6 +75,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   }>({ type: null, path: '' });
   const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
   const [isEmulatorFullscreen, setIsEmulatorFullscreen] = useState(false);
+  const [bgWarning, setBgWarning] = useState(false); // tab went background during generation
   const [githubSyncConfig, setGithubSyncConfig] = useState<{
     isOpen: boolean;
     token: string;
@@ -668,6 +669,39 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // Warn when tab goes to background during generation (browsers throttle/kill streams)
+  const wentBackgroundRef = useRef(false);
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden && isGenerating) {
+        setBgWarning(true);
+        wentBackgroundRef.current = true;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [isGenerating]);
+
+  // Clear the warning and background flag once generation finishes
+  useEffect(() => {
+    if (!isGenerating) {
+      setBgWarning(false);
+      wentBackgroundRef.current = false;
+    }
+  }, [isGenerating]);
+
+  // Warn before closing/navigating away during generation
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isGenerating) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isGenerating]);
+
   useEffect(() => {
     const handleClickOutside = () => {
       if (menuOpenPath) {
@@ -917,9 +951,12 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
         } : log));
       } else {
         console.error(error);
+        const bgCause = wentBackgroundRef.current;
         setLogs(prev => prev.map(log => log.id === logId ? {
           ...log,
-          text: `Generation failed${error?.message ? `: ${error.message}` : '.'}`,
+          text: bgCause
+            ? `Generation failed: tab was backgrounded — stream interrupted. Hit Retry to try again.`
+            : `Generation failed${error?.message ? `: ${error.message}` : '.'}`,
           files: log.files?.map(f => f.status === 'generating' ? { ...f, status: 'error', errorMsg: 'Generation failed' } : f),
           retryPrompt: finalPromptToUse,
           retryAttachments: attachmentsToUse,
@@ -1379,11 +1416,23 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
 
   return (
     // Fixed layout container that prevents global scrolling
-    <div 
+    <div
       className="fixed inset-0 overflow-hidden bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
       style={{ '--left-width': `${leftPanelWidth}%` } as React.CSSProperties}
     >
-      <TopNav 
+      {/* Background-tab warning banner */}
+      {bgWarning && (
+        <div className="fixed top-[72px] left-0 right-0 z-[300] flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-500/95 backdrop-blur-md text-zinc-950 text-xs font-semibold shadow-lg">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>⚠️ Keep this tab open during generation — switching away can interrupt the stream and cause failures.</span>
+          </div>
+          <button onClick={() => setBgWarning(false)} className="shrink-0 p-1 hover:bg-black/10 rounded transition-colors">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+      <TopNav
         user={user} 
         userProfile={userProfile} 
         onLogin={onRequireAuth} 
