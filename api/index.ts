@@ -1064,8 +1064,19 @@ app.post('/api/generate/stream', async (req, res) => {
         const decoded = await getAuth().verifyIdToken(idToken);
         userId = decoded.uid;
       }
-    } catch {
-      return res.status(401).json({ error: 'Invalid or expired auth token.' });
+    } catch (authErr: any) {
+      // Only hard-reject on explicit auth errors (bad token format, revoked, etc.)
+      // Network/admin-init errors should fall through and treat as guest
+      const code = authErr?.errorInfo?.code || authErr?.code || '';
+      const isAuthError = code.startsWith('auth/') ||
+        authErr?.message?.includes('Firebase ID token') ||
+        authErr?.message?.includes('invalid-argument');
+      if (isAuthError) {
+        return res.status(401).json({ error: 'Invalid or expired auth token.' });
+      }
+      // Otherwise: admin SDK unavailable or network issue — proceed as guest
+      console.warn('[generate] Token verification failed (non-auth reason), proceeding as guest:', authErr?.message);
+      userId = null;
     }
   }
 

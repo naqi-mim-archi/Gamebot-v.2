@@ -165,7 +165,7 @@ function TemplateCard({ t, onSelect, onClose }: { t: Template; onSelect: (p: str
       className="group text-left bg-zinc-900/60 hover:bg-zinc-800/80 border border-white/5 hover:border-white/15 rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus:border-emerald-500/40"
     >
       {/* Canvas animation preview */}
-      <div className="w-full relative bg-zinc-950" style={{ height: '120px' }}>
+      <div className="w-full relative bg-zinc-950" style={{ height: '140px' }}>
         {visible ? (
           <iframe
             srcDoc={t.canvas}

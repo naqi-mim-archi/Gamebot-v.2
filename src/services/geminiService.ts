@@ -68,8 +68,13 @@ export async function* generateGameCodeStream(
   // Build headers — include auth token if logged in, skip if guest
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (user) {
-    const token = await user.getIdToken(true);
-    headers['Authorization'] = `Bearer ${token}`;
+    try {
+      const token = await user.getIdToken(true);
+      headers['Authorization'] = `Bearer ${token}`;
+    } catch {
+      // Token refresh failed (network issue, expired session) — proceed as guest
+      console.warn('[gemini] Failed to get ID token, proceeding without auth header');
+    }
   }
 
   const response = await fetch('/api/generate/stream', {
