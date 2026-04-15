@@ -86,6 +86,7 @@ function AppRoutes() {
     <>
       <Routes>
         <Route path="/" element={<Home user={user} userProfile={userProfile} onSignIn={() => setShowAuthModal(true)} />} />
+        <Route path="/create" element={<Home user={user} userProfile={userProfile} onSignIn={() => setShowAuthModal(true)} />} />
         <Route path="/showcase" element={<Showcase user={user} />} />
         <Route path="/play/:id" element={<PlayShowcaseGame />} />
         <Route path="/profile/:uid" element={<UserProfilePage user={user} />} />

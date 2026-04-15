@@ -178,7 +178,7 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
       {/* Templates Modal */}
       {templatesOpen && (
         <GameTemplatesModal
-          onSelect={(templatePrompt) => setPrompt(templatePrompt)}
+          onSelect={(_files, hint) => { setPrompt(hint); setTemplatesOpen(false); }}
           onClose={() => setTemplatesOpen(false)}
         />
       )}

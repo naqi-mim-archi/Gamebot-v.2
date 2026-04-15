@@ -75,7 +75,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   }>({ type: null, path: '' });
   const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
   const [isEmulatorFullscreen, setIsEmulatorFullscreen] = useState(false);
-  const [bgWarning, setBgWarning] = useState(false); // tab went background during generation
   const [savedIndicator, setSavedIndicator] = useState(false);
   const savedIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [githubSyncConfig, setGithubSyncConfig] = useState<{
@@ -671,26 +670,6 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  // Warn when tab goes to background during generation (browsers throttle/kill streams)
-  const wentBackgroundRef = useRef(false);
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.hidden && isGenerating) {
-        setBgWarning(true);
-        wentBackgroundRef.current = true;
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [isGenerating]);
-
-  // Clear the warning and background flag once generation finishes
-  useEffect(() => {
-    if (!isGenerating) {
-      setBgWarning(false);
-      wentBackgroundRef.current = false;
-    }
-  }, [isGenerating]);
 
   // Warn before closing/navigating away during generation
   useEffect(() => {
@@ -968,12 +947,12 @@ setFileDiffs(diffs);
         } : log));
       } else {
         console.error(error);
-        const bgCause = wentBackgroundRef.current;
+        const errMsg = error?.message
+          ? `Generation failed: ${error.message}`
+          : 'Generation failed. Please try again.';
         setLogs(prev => prev.map(log => log.id === logId ? {
           ...log,
-          text: bgCause
-            ? `Generation failed: tab was backgrounded — stream interrupted. Hit Retry to try again.`
-            : `Generation failed${error?.message ? `: ${error.message}` : '.'}`,
+          text: errMsg,
           files: log.files?.map(f => f.status === 'generating' ? { ...f, status: 'error', errorMsg: 'Generation failed' } : f),
           retryPrompt: finalPromptToUse,
           retryAttachments: attachmentsToUse,
@@ -1437,18 +1416,6 @@ setFileDiffs(diffs);
       className="fixed inset-0 overflow-hidden bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
       style={{ '--left-width': `${leftPanelWidth}%` } as React.CSSProperties}
     >
-      {/* Background-tab warning banner */}
-      {bgWarning && (
-        <div className="fixed top-[72px] left-0 right-0 z-[300] flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-500/95 backdrop-blur-md text-zinc-950 text-xs font-semibold shadow-lg">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>⚠️ Keep this tab open during generation — switching away can interrupt the stream and cause failures.</span>
-          </div>
-          <button onClick={() => setBgWarning(false)} className="shrink-0 p-1 hover:bg-black/10 rounded transition-colors">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
       <TopNav
         user={user} 
         userProfile={userProfile} 
@@ -2189,7 +2156,13 @@ setFileDiffs(diffs);
       {/* Game Templates Modal */}
       {templatesOpen && (
         <GameTemplatesModal
-          onSelect={(templatePrompt) => setPrompt(templatePrompt)}
+          onSelect={(templateFiles, hint) => {
+            if (templateFiles && Object.keys(templateFiles).length > 0) {
+              setFiles(templateFiles);
+            }
+            setPrompt(hint);
+            setTemplatesOpen(false);
+          }}
           onClose={() => setTemplatesOpen(false)}
         />
       )}

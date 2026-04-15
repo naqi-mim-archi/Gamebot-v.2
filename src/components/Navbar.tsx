@@ -23,6 +23,7 @@ export default function Navbar({ user, onSignIn }: NavbarProps) {
   }, []);
 
   const navLinks = [
+    { name: 'Create', path: '/' },
     { name: 'Showcase', path: '/showcase' },
     { name: 'Pricing', path: '/pricing' },
     { name: 'About', path: '/about' },

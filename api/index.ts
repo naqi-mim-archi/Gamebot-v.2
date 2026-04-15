@@ -1121,6 +1121,12 @@ app.post('/api/generate/stream', async (req, res) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
+  // Heartbeat every 15s — keeps the SSE connection alive through Vercel's edge
+  // proxy and CDN layers which close idle connections after ~30s of silence.
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(': ping\n\n');
+  }, 15000);
+
   try {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) throw new Error('GEMINI_API_KEY is not configured on the server.');
@@ -1207,6 +1213,7 @@ app.post('/api/generate/stream', async (req, res) => {
     console.error('Generation error:', err.message);
     sendEvent({ type: 'error', message: err.message || 'Generation failed.' });
   } finally {
+    clearInterval(heartbeat);
     res.end();
   }
 });
