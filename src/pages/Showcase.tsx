@@ -444,7 +444,7 @@ function TopCreatorsRow({ creators, navigate }: { creators: { userId: string; na
               onClick={() => navigate(`/profile/${creator.userId}`)}
               className="flex items-center gap-2.5 flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 border border-white/5 hover:border-white/10 rounded-xl px-3.5 py-2 whitespace-nowrap transition-colors"
             >
-              <span className="text-[11px] font-bold text-zinc-500 w-6 text-left">{ranks[idx % ranks.length]}</span>
+              <span className="text-[11px] font-bold text-zinc-500 w-6 text-left">{ranks[idx % creators.length]}</span>
               {creator.photo ? (
                 <img src={creator.photo} alt={creator.name} className="w-7 h-7 rounded-full object-cover ring-1 ring-white/10 flex-shrink-0" />
               ) : (
