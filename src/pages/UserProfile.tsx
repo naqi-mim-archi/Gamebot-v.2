@@ -7,7 +7,7 @@ import { db } from '../services/firebase';
 import {
   getUserPublicGames, toggleFollow, checkIsFollowing, SavedGame, toggleLike, getUserLikedGameIds,
   getFriendStatus, sendFriendRequest, cancelFriendRequest, acceptFriendRequest, declineFriendRequest,
-  removeFriend, getPendingFriendRequests, FriendStatus, FriendRequest,
+  removeFriend, getPendingFriendRequests, getFriends, FriendStatus, FriendRequest,
 } from '../services/db';
 import { bundleForPreview } from '../services/geminiService';
 import Navbar from '../components/Navbar';

@@ -1048,46 +1048,83 @@ Return ONLY the raw JSON object. No explanations, no markdown formatting.`;
 
 const MULTIPLAYER_ADDON = `
 
-MULTIPLAYER BRIDGE (REQUIRED for this game — follow exactly):
-This game runs inside an iframe on a platform that handles online matchmaking.
-Two players connect via a room code. The iframe communicates with the parent using postMessage.
-You MUST implement the following protocol so both players stay perfectly in sync:
+=== MANDATORY MULTIPLAYER REQUIREMENT — READ CAREFULLY ===
 
-STEP 1 — Signal game loaded (call once, before any game loop):
-  window.parent.postMessage({ type: 'MP_GAME_LOADED' }, '*');
+The game MUST begin with a MODE SELECT SCREEN — this is non-negotiable.
+Do NOT start the game loop, do NOT show a canvas game, do NOT contact any network.
+The very first thing the player sees must be this choice:
 
-STEP 2 — Wait for MP_INIT before starting (show overlay until it arrives):
-  var playerIndex = null;
+  ┌─────────────────────────────────────┐
+  │         Choose How to Play          │
+  │                                     │
+  │  [ 🎮  Local Multiplayer  ]         │
+  │    Both players, one keyboard       │
+  │                                     │
+  │  [ 🌐  Online Multiplayer ]         │
+  │    Play with a friend online        │
+  └─────────────────────────────────────┘
+
+Implementation — use this exact structure in your JavaScript:
+
+  let gameMode = null; // 'local' or 'online' — set when player picks
+
+  function showModeSelect() {
+    // Hide the game canvas completely
+    // Render two large clickable buttons over a styled background
+    // "Local Multiplayer" button → calls startLocal()
+    // "Online Multiplayer" button → calls startOnline()
+  }
+
+  function startLocal() {
+    gameMode = 'local';
+    hideModeSelect();
+    initGame(); // begin normal local game immediately
+  }
+
+  function startOnline() {
+    gameMode = 'online';
+    hideModeSelect();
+    showWaitingScreen(); // "Waiting for opponent..."
+    window.parent.postMessage({ type: 'MP_GAME_LOADED' }, '*');
+  }
+
+  // Call showModeSelect() at the very top — before anything else runs:
+  showModeSelect();
+
+LOCAL mode rules:
+- P1 controls: WASD or left side of keyboard
+- P2 controls: Arrow keys or right side of keyboard
+- Both players share one screen, no network involved at all
+
+ONLINE mode — postMessage bridge (only active when gameMode === 'online'):
+
   window.addEventListener('message', function(e) {
-    if (!e.data || typeof e.data !== 'object') return;
+    if (!e.data) return;
     if (e.data.type === 'MP_INIT') {
-      playerIndex = e.data.playerIndex; // 0 = P1 host, 1 = P2 guest
-      document.getElementById('mp-overlay').style.display = 'none';
-      startGame(); // begin loop NOW
+      var playerIndex = e.data.playerIndex; // 0 = host (P1), 1 = guest (P2)
+      startGame(playerIndex); // now begin the game
     }
     if (e.data.type === 'MP_RECV') {
-      applyOpponentState(e.data.data); // state from the other player
+      applyOpponentState(e.data.data); // render what the opponent sent
     }
   });
 
-STEP 3 — Send state to opponent whenever it changes:
-  function sendToOpponent(data) {
-    window.parent.postMessage({ type: 'MP_SEND', data: data }, '*');
+  // Each frame (online only): player 0 broadcasts authoritative game state,
+  // player 1 sends only their own input/position
+  function sendState(data) {
+    if (gameMode === 'online') {
+      window.parent.postMessage({ type: 'MP_SEND', data: data }, '*');
+    }
   }
 
-GAME LOGIC RULES:
-- Player 0 (host) owns ALL shared physics: ball/projectile movement, enemy spawning, collisions, scoring, level changes.
-  Every frame Player 0 must broadcast: sendToOpponent({ type:'state', ...everythingShared })
-- Player 1 (guest) receives Player 0 state and renders it directly — NEVER re-runs physics on Player 1's side.
-  Player 1 only sends its own character position each frame.
-- Each player controls ONLY their own character (playerIndex 0 = P1, playerIndex 1 = P2).
-- Game ends at the same moment for both because Player 0 broadcasts the end condition.
+Online authority model:
+- Player 0 (host) owns ALL physics: ball/projectile movement, collisions, scoring, win/lose detection
+- Player 0 broadcasts full game state every frame via sendState()
+- Player 1 receives that state via MP_RECV and renders it — does NOT re-run physics
+- Both players see identical game state because Player 0 is the single source of truth
 
-WAITING OVERLAY (add to index.html, hide it in MP_INIT handler):
-  <div id="mp-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.88);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:monospace;z-index:999;gap:14px;">
-    <div style="font-size:22px;font-weight:900;letter-spacing:.05em;">WAITING FOR OPPONENT</div>
-    <div style="font-size:13px;color:#aaa;">Use the Play with Friend button to invite someone</div>
-  </div>
+IMPORTANT: Never skip the mode select screen. Never default to online. Never show "Waiting for Opponent" without the user first clicking "Online Multiplayer". Keyboard controls must work perfectly in local mode.
+=== END MULTIPLAYER REQUIREMENT ===
 `;
 
 function isMultiplayerPrompt(prompt: string): boolean {
