@@ -100,6 +100,7 @@ export default function UserProfile({ user }: { user?: any }) {
   const [friendPending, setFriendPending] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
+  const [friends, setFriends] = useState<{ uid: string; displayName: string; photoURL: string }[]>([]);
 
   useEffect(() => {
     if (!uid) return;
@@ -127,6 +128,23 @@ export default function UserProfile({ user }: { user?: any }) {
           ]);
           setIsFollowing(following);
           setFriendStatus(fStatus);
+        }
+
+        // Load friends list for any profile (own or other)
+        const friendRecords = await getFriends(uid!);
+        const friendUids = friendRecords.map(r =>
+          r.fromUserId === uid ? r.toUserId : r.fromUserId
+        );
+        if (friendUids.length > 0) {
+          const friendProfiles = await Promise.all(
+            friendUids.map(async fUid => {
+              const snap = await getDoc(doc(db, 'users', fUid));
+              if (!snap.exists()) return null;
+              const d = snap.data();
+              return { uid: fUid, displayName: d.displayName || 'Anonymous', photoURL: d.photoURL || '' };
+            })
+          );
+          setFriends(friendProfiles.filter(Boolean) as { uid: string; displayName: string; photoURL: string }[]);
         }
 
         // Load pending friend requests for own profile
@@ -431,6 +449,37 @@ export default function UserProfile({ user }: { user?: any }) {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Friends List */}
+        {friends.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-xl font-display font-bold mb-4 flex items-center gap-2">
+              <Users className="w-5 h-5 text-emerald-400" />
+              Friends
+              <span className="text-sm font-normal text-zinc-500">({friends.length})</span>
+            </h2>
+            <div className="flex flex-wrap gap-3">
+              {friends.map(friend => (
+                <button
+                  key={friend.uid}
+                  onClick={() => navigate(`/profile/${friend.uid}`)}
+                  className="flex items-center gap-2.5 bg-zinc-900/60 hover:bg-zinc-800 border border-white/5 hover:border-white/10 rounded-xl px-3.5 py-2.5 transition-all"
+                >
+                  <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center border border-white/10">
+                    {friend.photoURL ? (
+                      <img src={friend.photoURL} alt={friend.displayName} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-sm font-bold text-zinc-400">
+                        {friend.displayName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-sm font-medium text-zinc-200">{friend.displayName}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

@@ -1046,6 +1046,58 @@ Requirements:
 
 Return ONLY the raw JSON object. No explanations, no markdown formatting.`;
 
+const MULTIPLAYER_ADDON = `
+
+MULTIPLAYER BRIDGE (REQUIRED for this game — follow exactly):
+This game runs inside an iframe on a platform that handles online matchmaking.
+Two players connect via a room code. The iframe communicates with the parent using postMessage.
+You MUST implement the following protocol so both players stay perfectly in sync:
+
+STEP 1 — Signal game loaded (call once, before any game loop):
+  window.parent.postMessage({ type: 'MP_GAME_LOADED' }, '*');
+
+STEP 2 — Wait for MP_INIT before starting (show overlay until it arrives):
+  var playerIndex = null;
+  window.addEventListener('message', function(e) {
+    if (!e.data || typeof e.data !== 'object') return;
+    if (e.data.type === 'MP_INIT') {
+      playerIndex = e.data.playerIndex; // 0 = P1 host, 1 = P2 guest
+      document.getElementById('mp-overlay').style.display = 'none';
+      startGame(); // begin loop NOW
+    }
+    if (e.data.type === 'MP_RECV') {
+      applyOpponentState(e.data.data); // state from the other player
+    }
+  });
+
+STEP 3 — Send state to opponent whenever it changes:
+  function sendToOpponent(data) {
+    window.parent.postMessage({ type: 'MP_SEND', data: data }, '*');
+  }
+
+GAME LOGIC RULES:
+- Player 0 (host) owns ALL shared physics: ball/projectile movement, enemy spawning, collisions, scoring, level changes.
+  Every frame Player 0 must broadcast: sendToOpponent({ type:'state', ...everythingShared })
+- Player 1 (guest) receives Player 0 state and renders it directly — NEVER re-runs physics on Player 1's side.
+  Player 1 only sends its own character position each frame.
+- Each player controls ONLY their own character (playerIndex 0 = P1, playerIndex 1 = P2).
+- Game ends at the same moment for both because Player 0 broadcasts the end condition.
+
+WAITING OVERLAY (add to index.html, hide it in MP_INIT handler):
+  <div id="mp-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.88);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:monospace;z-index:999;gap:14px;">
+    <div style="font-size:22px;font-weight:900;letter-spacing:.05em;">WAITING FOR OPPONENT</div>
+    <div style="font-size:13px;color:#aaa;">Use the Play with Friend button to invite someone</div>
+  </div>
+`;
+
+function isMultiplayerPrompt(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return lower.includes('multiplayer') || lower.includes('2 player') || lower.includes('two player') ||
+    lower.includes('2-player') || lower.includes('pvp') || lower.includes('co-op') ||
+    lower.includes('coop') || lower.includes('versus') || lower.includes('vs another') ||
+    lower.includes('with a friend') || lower.includes('online') || lower.includes('local multiplayer');
+}
+
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 // POST /api/generate/stream
@@ -1146,11 +1198,15 @@ app.post('/api/generate/stream', async (req, res) => {
     }
     parts.push({ text: textPrompt });
 
+    const fullSystemInstruction = isMultiplayerPrompt(prompt)
+      ? SYSTEM_INSTRUCTION + MULTIPLAYER_ADDON
+      : SYSTEM_INSTRUCTION;
+
     const responseStream = await ai.models.generateContentStream({
       model: GEMINI_MODEL,
       contents: [{ role: 'user', parts }],
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: fullSystemInstruction,
         temperature: 0.7,
         responseMimeType: 'application/json',
       },
