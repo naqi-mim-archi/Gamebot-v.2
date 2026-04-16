@@ -1136,6 +1136,24 @@ function isMultiplayerPrompt(prompt: string): boolean {
 }
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL_DETAILED = process.env.GEMINI_MODEL_DETAILED || "gemini-2.5-pro";
+
+const SYSTEM_INSTRUCTION_DETAILED = `You are an elite game developer with a strong eye for visual design and game feel.
+Your task is to create an exceptionally polished, visually stunning browser game.
+
+Requirements:
+1. Generate a multi-file project structure (e.g., index.html, src/main.js, styles/style.css).
+2. Use HTML5 Canvas. For complex 3D scenes, include Three.js via CDN.
+3. The output MUST be a valid JSON object where keys are file paths and values are the file contents as strings.
+4. The game MUST be full-screen. The canvas should fill the entire window. Handle window resize events to update canvas dimensions dynamically.
+5. VISUAL EXCELLENCE: Rich particle systems, smooth tweened animations, screen shake on impact, glowing neon effects, gradient fills, dynamic shadows and lighting where feasible. Every action should have a visible reaction.
+6. GAME FEEL: Satisfying audio feedback using Web Audio API (synthesised sounds — no external files), responsive controls with input buffering, clear visual feedback for every player action. Aim for 60fps.
+7. POLISH: Animated title/loading screen, pause menu (Escape key), high score / best time persistence via localStorage, animated UI transitions and score pop-ups.
+8. Use relative paths to link CSS and JS files (e.g., <script src="src/main.js"></script>). NO ES modules — all JS must be loaded via <script> tags so files can be inlined for preview.
+9. IMPORTANT: canvas appended to document.body; body must have margin:0 and overflow:hidden.
+10. Aim for production-quality architecture: clean separation of game logic, renderer, and UI; optimised render loops; no memory leaks.
+
+Take your time to build something truly impressive. Return ONLY the raw JSON object. No explanations, no markdown.`;
 
 // POST /api/generate/stream
 // Streams Gemini game generation as SSE.
@@ -1169,14 +1187,15 @@ app.post('/api/generate/stream', async (req, res) => {
     }
   }
 
-  const { prompt, previousFiles, files: attachments } = req.body;
+  const { prompt, previousFiles, files: attachments, mode } = req.body;
 
   if (!prompt && (!attachments || attachments.length === 0)) {
     return res.status(400).json({ error: 'Prompt is required.' });
   }
 
   const isRevision = previousFiles && Object.keys(previousFiles).length > 0;
-  const cost = isRevision ? 1 : 5;
+  const isDetailed = mode === 'detailed';
+  const cost = isRevision ? 1 : (isDetailed ? 7 : 3);
 
   // 2. Atomic credit check + deduction (server-side only)
   if (userId) {
@@ -1235,12 +1254,15 @@ app.post('/api/generate/stream', async (req, res) => {
     }
     parts.push({ text: textPrompt });
 
+    const baseInstruction = isDetailed ? SYSTEM_INSTRUCTION_DETAILED : SYSTEM_INSTRUCTION;
     const fullSystemInstruction = isMultiplayerPrompt(prompt)
-      ? SYSTEM_INSTRUCTION + MULTIPLAYER_ADDON
-      : SYSTEM_INSTRUCTION;
+      ? baseInstruction + MULTIPLAYER_ADDON
+      : baseInstruction;
+
+    const modelName = isDetailed ? GEMINI_MODEL_DETAILED : GEMINI_MODEL;
 
     const responseStream = await ai.models.generateContentStream({
-      model: GEMINI_MODEL,
+      model: modelName,
       contents: [{ role: 'user', parts }],
       config: {
         systemInstruction: fullSystemInstruction,

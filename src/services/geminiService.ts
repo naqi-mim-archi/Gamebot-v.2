@@ -59,7 +59,8 @@ export async function* generateGameCodeStream(
   prompt: string,
   previousFiles?: FileSystem,
   files?: FileAttachment[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  mode?: 'quick' | 'detailed'
 ): AsyncGenerator<string | FileSystem, void, unknown> {
 
   const auth = getAuth();
@@ -80,7 +81,7 @@ export async function* generateGameCodeStream(
   const response = await fetch('/api/generate/stream', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ prompt, previousFiles, files }),
+    body: JSON.stringify({ prompt, previousFiles, files, mode }),
     signal,
   });
 

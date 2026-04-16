@@ -16,6 +16,9 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
   const [steamConnectOpen, setSteamConnectOpen] = useState(false);
+  const [generationMode, setGenerationMode] = useState<'quick' | 'detailed'>(() => {
+    return (localStorage.getItem('gb_gen_mode') as 'quick' | 'detailed') || 'detailed';
+  });
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -126,7 +129,7 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
             />
           </div>
           <div className="flex items-center justify-between px-3 pb-2">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
               <button type="button" onClick={toggleListening}
                 className={`p-2 transition-colors rounded-lg ${isListening ? 'text-red-400 bg-red-400/10' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}>
                 {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -135,12 +138,14 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
                 className="p-2 text-zinc-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
                 <Paperclip className="w-4 h-4" />
               </button>
-              <button type="button" onClick={handleEnhancePrompt}
-                disabled={!prompt.trim() || enhanceModal !== 'closed'}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-emerald-400 rounded-lg transition-all border border-white/5 disabled:opacity-50">
-                <Wand2 className="w-3.5 h-3.5" />
-                <span className="text-[10px] uppercase font-bold tracking-wider">Enhance</span>
-              </button>
+              {generationMode === 'detailed' && (
+                <button type="button" onClick={handleEnhancePrompt}
+                  disabled={!prompt.trim() || enhanceModal !== 'closed'}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-emerald-400 rounded-lg transition-all border border-white/5 disabled:opacity-50">
+                  <Wand2 className="w-3.5 h-3.5" />
+                  <span className="text-[10px] uppercase font-bold tracking-wider">Enhance</span>
+                </button>
+              )}
               <button type="button" onClick={() => setTemplatesOpen(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-violet-400 rounded-lg transition-all border border-white/5">
                 <LayoutTemplate className="w-3.5 h-3.5" />
@@ -157,11 +162,23 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
               </button>
               <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
             </div>
-            <button type="submit"
-              disabled={(!prompt.trim() && attachments.length === 0) || enhanceModal !== 'closed'}
-              className="p-2.5 bg-emerald-500 text-black rounded-xl hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/20">
-              <ArrowRight className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Mode dropdown */}
+              <select
+                value={generationMode}
+                onChange={(e) => { const v = e.target.value as 'quick' | 'detailed'; setGenerationMode(v); localStorage.setItem('gb_gen_mode', v); }}
+                className="text-[10px] font-semibold bg-white/5 border border-white/10 text-zinc-300 rounded-lg px-2 py-1 cursor-pointer focus:outline-none hover:bg-white/10 transition-colors appearance-none"
+                style={{ backgroundImage: 'none' }}
+              >
+                <option value="quick" className="bg-zinc-900">⚡ Quick</option>
+                <option value="detailed" className="bg-zinc-900">✨ Detailed</option>
+              </select>
+              <button type="submit"
+                disabled={(!prompt.trim() && attachments.length === 0) || enhanceModal !== 'closed'}
+                className="p-2.5 bg-emerald-500 text-black rounded-xl hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/20">
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       </form>

@@ -107,6 +107,9 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const [kickoffIsSpinOff, setKickoffIsSpinOff] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+  const [generationMode, setGenerationMode] = useState<'quick' | 'detailed'>(() => {
+    return (localStorage.getItem('gb_gen_mode') as 'quick' | 'detailed') || 'detailed';
+  });
   const [projectTitle, setProjectTitle] = useState('');
   const [savedGameId, setSavedGameId] = useState<string | null>(null);
   const [savedGamePrompt, setSavedGamePrompt] = useState('');
@@ -718,8 +721,8 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     const isManualTrigger = promptToUse === prompt;
     const currentTitle = explicitTitle !== undefined ? explicitTitle : projectTitle;
 
-    // Show Creative Kickoff for NEW games ONLY IF we haven't seen/dismissed it yet
-    if (!files && !skipKickoff && isManualTrigger && !kickoffDone) {
+    // Show Creative Kickoff for NEW games ONLY in Detailed mode and if not yet dismissed
+    if (!files && !skipKickoff && isManualTrigger && !kickoffDone && generationMode === 'detailed') {
       setPendingPrompt(promptToUse);
       setPendingAttachments(attachmentsToUse);
       setKickoffOpen(true);
@@ -793,7 +796,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     abortControllerRef.current = abortController;
 
     try {
-      const stream = generateGameCodeStream(finalPromptToUse, files || undefined, attachmentsToUse, abortController.signal);
+      const stream = generateGameCodeStream(finalPromptToUse, files || undefined, attachmentsToUse, abortController.signal, generationMode);
       let finalFiles: FileSystem | null = null;
 
       try {
@@ -1615,7 +1618,28 @@ setFileDiffs(diffs);
               </div>
             )}
             
-            <div 
+            {/* Generation Mode Toggle */}
+            {!files && (
+              <div className="flex items-center gap-2 mb-2">
+                <div className="flex gap-0.5 rounded-lg bg-zinc-800/60 border border-white/5 p-0.5">
+                  <button
+                    onClick={() => { setGenerationMode('quick'); localStorage.setItem('gb_gen_mode', 'quick'); }}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${generationMode === 'quick' ? 'bg-amber-500 text-zinc-900 shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                    title="Quick: skips enhance & planning, uses gemini-2.5-flash — 3 credits"
+                  >⚡ Quick</button>
+                  <button
+                    onClick={() => { setGenerationMode('detailed'); localStorage.setItem('gb_gen_mode', 'detailed'); }}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${generationMode === 'detailed' ? 'bg-violet-500 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                    title="Graphic & Detailed: enhance + planning step, uses gemini-2.5-pro — 7 credits"
+                  >✨ Detailed</button>
+                </div>
+                <span className="text-[10px] text-zinc-500">
+                  {generationMode === 'quick' ? '3 credits · fast' : '7 credits · best quality'}
+                </span>
+              </div>
+            )}
+
+            <div
               className={`relative rounded-2xl transition-all duration-300 ${isDragging ? 'ring-2 ring-emerald-500 bg-emerald-500/10' : 'glass-panel focus-within:glass-panel-active'}`}              onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -1658,15 +1682,17 @@ setFileDiffs(diffs);
                   {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </button>
 
-                <button
-                  onClick={handleEnhancePrompt}
-                  disabled={isGenerating || enhanceModal !== 'closed' || !prompt.trim()}
-                  className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1"
-                  title="Enhance Prompt"
-                >
-                  <Wand2 className="w-4 h-4" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Enhance</span>
-                </button>
+                {generationMode === 'detailed' && (
+                  <button
+                    onClick={handleEnhancePrompt}
+                    disabled={isGenerating || enhanceModal !== 'closed' || !prompt.trim()}
+                    className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1"
+                    title="Enhance Prompt"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Enhance</span>
+                  </button>
+                )}
               </div>
 
               {isGenerating ? (
@@ -1685,6 +1711,11 @@ setFileDiffs(diffs);
                   className="absolute bottom-3 right-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
                 >
                   <span className="hidden sm:inline">Generate</span>
+                  {!files && (
+                    <span className="hidden sm:inline text-[10px] font-normal opacity-70">
+                      ({generationMode === 'quick' ? 3 : 7}cr)
+                    </span>
+                  )}
                   <Send className="w-4 h-4" />
                 </button>
               )}
