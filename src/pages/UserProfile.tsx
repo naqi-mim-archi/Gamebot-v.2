@@ -231,7 +231,10 @@ export default function UserProfile({ user }: { user?: any }) {
   }
 
   const displayName = creator?.displayName || 'Anonymous Creator';
-  const isOwnProfile = user?.uid === uid;
+  // Explicitly require a logged-in user AND a different uid — prevents false negatives
+  // when user is still null during auth resolution (user?.uid === uid would be false then).
+  const isOwnProfile = !!user && user.uid === uid;
+  const isOtherProfile = !!user && user.uid !== uid;
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-emerald-500/30">
@@ -259,7 +262,7 @@ export default function UserProfile({ user }: { user?: any }) {
             <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 mb-3">
               <h1 className="text-4xl font-display font-bold text-white">{displayName}</h1>
               
-              {!isOwnProfile && (
+              {isOtherProfile && (
                 <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start">
                   {/* Follow button */}
                   <button
@@ -275,8 +278,7 @@ export default function UserProfile({ user }: { user?: any }) {
                   </button>
 
                   {/* Add Friend button */}
-                  {user && (
-                    <button
+                  <button
                       onClick={handleFriendAction}
                       disabled={friendPending}
                       title={
@@ -307,7 +309,6 @@ export default function UserProfile({ user }: { user?: any }) {
                         <><UserPlus className="w-4 h-4" /> Add Friend</>
                       )}
                     </button>
-                  )}
                 </div>
               )}
 
