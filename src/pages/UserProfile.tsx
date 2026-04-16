@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Play, Heart, Zap, Gamepad2, Loader2, ArrowLeft, UserPlus, UserCheck } from 'lucide-react';
+import { Play, Heart, Zap, Gamepad2, Loader2, ArrowLeft, UserPlus, UserCheck, Users, Clock, X, Check, UserMinus } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { getUserPublicGames, toggleFollow, checkIsFollowing, SavedGame, toggleLike, getUserLikedGameIds } from '../services/db';
+import {
+  getUserPublicGames, toggleFollow, checkIsFollowing, SavedGame, toggleLike, getUserLikedGameIds,
+  getFriendStatus, sendFriendRequest, cancelFriendRequest, acceptFriendRequest, declineFriendRequest,
+  removeFriend, getPendingFriendRequests, FriendStatus, FriendRequest,
+} from '../services/db';
 import { bundleForPreview } from '../services/geminiService';
 import Navbar from '../components/Navbar';
 import SEO from '../components/SEO';
@@ -91,6 +95,12 @@ export default function UserProfile({ user }: { user?: any }) {
   const [followerCount, setFollowerCount] = useState(0);
   const [followPending, setFollowPending] = useState(false);
 
+  // Friend Request State
+  const [friendStatus, setFriendStatus] = useState<FriendStatus>('none');
+  const [friendPending, setFriendPending] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [showFriendRequests, setShowFriendRequests] = useState(false);
+
   useEffect(() => {
     if (!uid) return;
 
@@ -111,8 +121,18 @@ export default function UserProfile({ user }: { user?: any }) {
         setLikedIds(liked);
 
         if (user && user.uid !== uid) {
-          const following = await checkIsFollowing(user.uid, uid!);
+          const [following, fStatus] = await Promise.all([
+            checkIsFollowing(user.uid, uid!),
+            getFriendStatus(user.uid, uid!),
+          ]);
           setIsFollowing(following);
+          setFriendStatus(fStatus);
+        }
+
+        // Load pending friend requests for own profile
+        if (user && user.uid === uid) {
+          const requests = await getPendingFriendRequests(user.uid);
+          setPendingRequests(requests);
         }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -155,6 +175,44 @@ export default function UserProfile({ user }: { user?: any }) {
       console.error("Failed to follow:", error);
     }
     setFollowPending(false);
+  };
+
+  const handleFriendAction = async () => {
+    if (!user || user.uid === uid || friendPending) return;
+    setFriendPending(true);
+    try {
+      if (friendStatus === 'none') {
+        await sendFriendRequest(
+          user.uid, uid!,
+          user.displayName || user.email || 'Anonymous',
+          user.photoURL || '',
+        );
+        setFriendStatus('pending_sent');
+      } else if (friendStatus === 'pending_sent') {
+        await cancelFriendRequest(user.uid, uid!);
+        setFriendStatus('none');
+      } else if (friendStatus === 'pending_received') {
+        // Accept — the other user sent it, so fromUserId = uid, toUserId = user.uid
+        await acceptFriendRequest(uid!, user.uid);
+        setFriendStatus('friends');
+      } else if (friendStatus === 'friends') {
+        await removeFriend(user.uid, uid!);
+        setFriendStatus('none');
+      }
+    } catch (err) {
+      console.error('Friend action failed:', err);
+    }
+    setFriendPending(false);
+  };
+
+  const handleAcceptRequest = async (req: FriendRequest) => {
+    await acceptFriendRequest(req.fromUserId, req.toUserId);
+    setPendingRequests(prev => prev.filter(r => r.id !== req.id));
+  };
+
+  const handleDeclineRequest = async (req: FriendRequest) => {
+    await declineFriendRequest(req.fromUserId, req.toUserId);
+    setPendingRequests(prev => prev.filter(r => r.id !== req.id));
   };
 
   const handleDiscordCopy = () => {
@@ -202,16 +260,65 @@ export default function UserProfile({ user }: { user?: any }) {
               <h1 className="text-4xl font-display font-bold text-white">{displayName}</h1>
               
               {!isOwnProfile && (
+                <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start">
+                  {/* Follow button */}
+                  <button
+                    onClick={handleFollowToggle}
+                    disabled={followPending}
+                    className={`px-5 py-2 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                      isFollowing
+                        ? 'bg-zinc-800 text-white hover:bg-red-500/20 hover:text-red-400 border border-zinc-700 hover:border-red-500/30'
+                        : 'bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_20px_rgba(255,255,255,0.15)]'
+                    }`}
+                  >
+                    {isFollowing ? <><UserCheck className="w-4 h-4" /> Following</> : <><UserPlus className="w-4 h-4" /> Follow</>}
+                  </button>
+
+                  {/* Add Friend button */}
+                  {user && (
+                    <button
+                      onClick={handleFriendAction}
+                      disabled={friendPending}
+                      title={
+                        friendStatus === 'none' ? 'Send friend request'
+                        : friendStatus === 'pending_sent' ? 'Cancel friend request'
+                        : friendStatus === 'pending_received' ? 'Accept friend request'
+                        : 'Remove friend'
+                      }
+                      className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all border disabled:opacity-60 ${
+                        friendStatus === 'friends'
+                          ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-red-500/15 hover:border-red-500/30 hover:text-red-400'
+                          : friendStatus === 'pending_sent'
+                          ? 'bg-amber-500/10 border-amber-500/25 text-amber-400 hover:bg-amber-500/20'
+                          : friendStatus === 'pending_received'
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-500'
+                      }`}
+                    >
+                      {friendPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : friendStatus === 'friends' ? (
+                        <><Users className="w-4 h-4" /> Friends</>
+                      ) : friendStatus === 'pending_sent' ? (
+                        <><Clock className="w-4 h-4" /> Requested</>
+                      ) : friendStatus === 'pending_received' ? (
+                        <><Check className="w-4 h-4" /> Accept</>
+                      ) : (
+                        <><UserPlus className="w-4 h-4" /> Add Friend</>
+                      )}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Own profile: friend requests badge */}
+              {isOwnProfile && pendingRequests.length > 0 && (
                 <button
-                  onClick={handleFollowToggle}
-                  disabled={followPending}
-                  className={`px-5 py-2 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${
-                    isFollowing 
-                      ? 'bg-zinc-800 text-white hover:bg-red-500/20 hover:text-red-400 border border-zinc-700 hover:border-red-500/30'
-                      : 'bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_20px_rgba(255,255,255,0.15)]'
-                  }`}
+                  onClick={() => setShowFriendRequests(v => !v)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-all"
                 >
-                  {isFollowing ? <><UserCheck className="w-4 h-4" /> Following</> : <><UserPlus className="w-4 h-4" /> Follow</>}
+                  <Users className="w-4 h-4" />
+                  {pendingRequests.length} Friend Request{pendingRequests.length !== 1 ? 's' : ''}
                 </button>
               )}
             </div>
@@ -271,6 +378,60 @@ export default function UserProfile({ user }: { user?: any }) {
             </div>
           </div>
         </div>
+
+        {/* Friend Requests Inbox — own profile only */}
+        {isOwnProfile && showFriendRequests && pendingRequests.length > 0 && (
+          <div className="mb-10 bg-zinc-900/60 border border-white/8 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-400" />
+                Friend Requests
+                <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-bold">
+                  {pendingRequests.length}
+                </span>
+              </h3>
+              <button
+                onClick={() => setShowFriendRequests(false)}
+                className="p-1 text-zinc-500 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <ul className="divide-y divide-white/5">
+              {pendingRequests.map(req => (
+                <li key={req.id} className="flex items-center gap-4 px-5 py-3.5">
+                  <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
+                    {req.fromPhotoURL ? (
+                      <img src={req.fromPhotoURL} alt={req.fromDisplayName} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-lg font-bold text-zinc-400">
+                        {(req.fromDisplayName || '?').charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{req.fromDisplayName}</p>
+                    <p className="text-xs text-zinc-500">wants to be your friend</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleAcceptRequest(req)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 transition-all flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Accept
+                    </button>
+                    <button
+                      onClick={() => handleDeclineRequest(req)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 border border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white transition-all flex items-center gap-1"
+                    >
+                      <X className="w-3.5 h-3.5" /> Decline
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Games Grid */}
         <h2 className="text-2xl font-display font-bold mb-6 flex items-center gap-2">

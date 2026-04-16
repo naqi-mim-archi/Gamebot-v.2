@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Maximize2, Minimize2, Loader2, Share2, GitFork } from 'lucide-react';
+import { ArrowLeft, Maximize2, Minimize2, Loader2, Share2, GitFork, Users } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { getGameById, incrementPlayCount, SavedGame } from '../services/db';
 import { bundleForPreview } from '../services/geminiService';
+import MultiplayerModal from '../components/MultiplayerModal';
+import { useMultiplayer } from '../hooks/useMultiplayer';
 
 export default function PlayShowcaseGame() {
   const { id } = useParams<{ id: string }>();
@@ -15,7 +17,25 @@ export default function PlayShowcaseGame() {
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [mpOpen, setMpOpen] = useState(false);
+  const [mpActive, setMpActive] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  const mp = useMultiplayer({
+    onEvent: (data) => {
+      iframeRef.current?.contentWindow?.postMessage({ type: 'MP_RECV', data }, '*');
+    },
+    onReady: (playerIndex) => {
+      setMpOpen(false);
+      setMpActive(true);
+      setTimeout(() => {
+        iframeRef.current?.contentWindow?.postMessage({ type: 'MP_INIT', playerIndex }, '*');
+      }, 300);
+    },
+    onOpponentDisconnected: () => {
+      setMpActive(false);
+    },
+  });
 
   useEffect(() => {
     if (!id) return;
@@ -90,6 +110,18 @@ export default function PlayShowcaseGame() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Listen for outgoing game events from iframe → relay via Socket.io
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      const d = e.data;
+      if (!d || typeof d !== 'object') return;
+      if (d.type === 'MP_SEND') mp.sendEvent(d.data);
+      if (d.type === 'MP_GAME_LOADED') mp.signalReady();
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [mp]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
@@ -137,6 +169,19 @@ export default function PlayShowcaseGame() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Play with Friend */}
+          <button
+            onClick={() => setMpOpen(true)}
+            title="Play with a friend online"
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+              mpActive
+                ? 'bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-300'
+                : 'bg-fuchsia-500/10 border-fuchsia-500/25 text-fuchsia-400 hover:bg-fuchsia-500/20 hover:border-fuchsia-500/40'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            {mpActive ? 'Online' : 'Play with Friend'}
+          </button>
           {/* Spin Off */}
           {game && (
             <button
@@ -195,6 +240,12 @@ export default function PlayShowcaseGame() {
           />
         </div>
       </main>
+      {mpOpen && (
+        <MultiplayerModal
+          mp={mp}
+          onClose={() => setMpOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -121,6 +121,24 @@ const TEMPLATES: Template[] = [
     hint: 'E.g. Add difficulty levels (6×6 grid), time limit mode, multiplayer scores',
     canvas: `<html><body style="margin:0;overflow:hidden;background:#0d0d1a"><canvas id="c" width="280" height="140"></canvas><script>const cv=document.getElementById('c'),c=cv.getContext('2d');const EMOJIS=['🌟','🎮','🔥','💎','🚀','🎯'];const BACKS=['#1a237e','#4a148c','#1b5e20','#b71c1c','#e65100','#006064'];const cards=[];for(let i=0;i<12;i++)cards.push({x:(i%6)*45+7,y:i<6?12:74,v:EMOJIS[i%6],bc:BACKS[i%6],phase:Math.random()*Math.PI*2,speed:.018+Math.random()*.012});let t=0;function f(){t++;c.fillStyle='#0d0d1a';c.fillRect(0,0,280,140);c.fillStyle='rgba(255,255,255,.025)';for(let i=0;i<14;i++)c.fillRect(i*20,0,1,140);for(let i=0;i<8;i++)c.fillRect(0,i*17,280,1);cards.forEach(card=>{card.phase+=card.speed;const flip=Math.cos(card.phase);const faceUp=flip>0;const sx=Math.abs(flip);const sw=38,sh=50;c.save();c.translate(card.x+sw/2,card.y+sh/2);c.scale(sx,1);const g=c.createLinearGradient(-sw/2,-sh/2,-sw/2,sh/2);if(faceUp){g.addColorStop(0,'#ffffff');g.addColorStop(1,'#e0e0e0');c.fillStyle=g;c.beginPath();c.roundRect(-sw/2,-sh/2,sw,sh,6);c.fill();c.strokeStyle='#bdbdbd';c.lineWidth=1;c.stroke();c.font='20px serif';c.textAlign='center';c.textBaseline='middle';c.fillStyle='#000';c.fillText(card.v,0,2);}else{g.addColorStop(0,card.bc+'dd');g.addColorStop(1,card.bc+'88');c.fillStyle=g;c.save();c.shadowColor=card.bc;c.shadowBlur=8;c.beginPath();c.roundRect(-sw/2,-sh/2,sw,sh,6);c.fill();c.restore();c.strokeStyle='rgba(255,255,255,.2)';c.lineWidth=1.5;c.beginPath();c.roundRect(-sw/2+3,-sh/2+3,sw-6,sh-6,3);c.stroke();}c.restore();});requestAnimationFrame(f);}f();<\/script></body></html>`,
   },
+  {
+    id: 'pong-mp',
+    icon: '🏓',
+    name: 'Pong — 2P Online',
+    desc: 'Classic Pong played live against a friend online',
+    tags: ['2D', 'Multiplayer'],
+    hint: 'E.g. Add power-ups, shrinking paddles, AI mode fallback, custom ball skins',
+    canvas: `<html><body style="margin:0;overflow:hidden;background:#000"><canvas id="c" width="280" height="140"></canvas><script>const cv=document.getElementById('c'),c=cv.getContext('2d');const PX=4;let bx=35,by=17,vx=.45,vy=.32,p1y=12,p2y=12;function f(){bx+=vx;by+=vy;if(by<1||by>33){vy=-vy;}if(bx<3&&by>=p1y&&by<=p1y+8){vx=Math.abs(vx)+.02;vy+=(by-p1y-4)*.05;}if(bx>67&&by>=p2y&&by<=p2y+8){vx=-(Math.abs(vx)+.02);vy+=(by-p2y-4)*.05;}if(bx<-2||bx>72){bx=35;by=17;vx=(Math.random()>.5?1:-1)*.45;vy=(Math.random()>.5?1:-1)*.32;}p1y+=(by-p1y-4)*.06;p2y+=(by-p2y-4)*.04;p1y=Math.max(0,Math.min(27,p1y));p2y=Math.max(0,Math.min(27,p2y));c.fillStyle='#000';c.fillRect(0,0,280,140);c.strokeStyle='rgba(255,255,255,.25)';c.lineWidth=1;c.setLineDash([4,4]);c.beginPath();c.moveTo(140,0);c.lineTo(140,140);c.stroke();c.setLineDash([]);c.fillStyle='#4fc3f7';c.fillRect(PX,(p1y*PX)|0,PX*2,PX*8);c.fillStyle='#f48fb1';c.fillRect(274-PX,(p2y*PX)|0,PX*2,PX*8);c.fillStyle='#fff';c.fillRect((bx*PX)|0,(by*PX)|0,PX,PX);c.font='bold 20px monospace';c.fillStyle='rgba(255,255,255,.5)';c.textAlign='center';c.fillText('2',90,24);c.fillText('1',190,24);const badge=c.createLinearGradient(94,126,186,126);badge.addColorStop(0,'#4fc3f7');badge.addColorStop(1,'#f48fb1');c.fillStyle=badge;c.font='bold 9px monospace';c.fillText('2 PLAYERS ONLINE',140,134);requestAnimationFrame(f);}f();<\/script></body></html>`,
+  },
+  {
+    id: 'battle-arena',
+    icon: '⚔️',
+    name: 'Battle Arena — 2P',
+    desc: '2-player online platform fighter',
+    tags: ['2D', 'Multiplayer'],
+    hint: 'E.g. Add special moves, health pickups, multiple arenas, knockback effects',
+    canvas: `<html><body style="margin:0;overflow:hidden;background:#0a0a18"><canvas id="c" width="280" height="140"></canvas><script>const cv=document.getElementById('c'),ctx=cv.getContext('2d');let t=0,p1={x:55,y:88,vx:0,dir:1},p2={x:225,y:88,vx:0,dir:-1},atk1=0,atk2=0;const pf=[{x:0,y:108,w:280,h:32},{x:30,y:80,w:80,h:8},{x:170,y:80,w:80,h:8},{x:105,y:55,w:70,h:8}];function drawFighter(x,y,col,dir,atk,hp){ctx.save();ctx.fillStyle=col;if(atk>0){ctx.shadowColor=col;ctx.shadowBlur=16;}ctx.fillRect(x-10,y-36,20,26);ctx.beginPath();ctx.arc(x,y-43,10,0,Math.PI*2);ctx.fill();ctx.fillStyle='#111';ctx.fillRect(x+dir*1,y-47,4,4);ctx.fillStyle=col+'88';ctx.fillRect(x-8,y-10,6,12);ctx.fillRect(x+2,y-10,6,12);ctx.fillStyle='#222';ctx.fillRect(x-9,y-2,8*(hp/100),3);ctx.fillStyle='#4caf50';ctx.fillRect(x-9,y-2,8*(hp/100),3);ctx.restore();}function f(){t+=.04;const bg=ctx.createLinearGradient(0,0,0,140);bg.addColorStop(0,'#0a0a18');bg.addColorStop(1,'#1a1a32');ctx.fillStyle=bg;ctx.fillRect(0,0,280,140);pf.forEach(p=>{ctx.fillStyle='#1b5e20';ctx.fillRect(p.x,p.y,p.w,p.h);ctx.fillStyle='rgba(255,255,255,.07)';ctx.fillRect(p.x,p.y,p.w,2);});p1.x=70+Math.sin(t*1.1)*15;p2.x=210+Math.sin(t*1.3+1)*15;atk1=Math.sin(t*3)>.7?8:0;atk2=Math.sin(t*3+1.5)>.7?8:0;drawFighter(p1.x,p1.y,'#4fc3f7',1,atk1,80);drawFighter(p2.x,p2.y,'#f48fb1',-1,atk2,65);ctx.font='bold 8px monospace';ctx.fillStyle='rgba(255,255,255,.5)';ctx.textAlign='center';ctx.fillText('P1',p1.x,p1.y-56);ctx.fillText('P2',p2.x,p2.y-56);const badge=ctx.createLinearGradient(78,132,202,132);badge.addColorStop(0,'#4fc3f7');badge.addColorStop(1,'#f48fb1');ctx.fillStyle=badge;ctx.font='bold 9px monospace';ctx.fillText('2 PLAYERS ONLINE',140,136);requestAnimationFrame(f);}f();<\/script></body></html>`,
+  },
 ];
 
 const TAG_COLORS: Record<string, string> = {
@@ -133,6 +151,7 @@ const TAG_COLORS: Record<string, string> = {
   RPG: 'bg-pink-500/15 text-pink-400 border-pink-500/20',
   Casual: 'bg-lime-500/15 text-lime-400 border-lime-500/20',
   Classic: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20',
+  Multiplayer: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/20',
 };
 
 function getChips(hint: string): string[] {
@@ -214,6 +233,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Template | null>(null);
   const [userPrompt, setUserPrompt] = useState('');
+  const [selectedChips, setSelectedChips] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -224,35 +244,46 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
   function handlePreview(t: Template) {
     setSelected(t);
     setUserPrompt('');
-    // Focus textarea after animation
+    setSelectedChips([]);
     setTimeout(() => textareaRef.current?.focus(), 150);
   }
 
   function handleBack() {
     setSelected(null);
     setUserPrompt('');
+    setSelectedChips([]);
   }
 
   async function handleStart() {
     if (!selected) return;
     setLoading(true);
     try {
+      const base = userPrompt.trim() || selected.hint;
+      const chipSuffix = selectedChips.length > 0
+        ? `\n\nQuick ideas to include:\n${selectedChips.map(c => `• ${c}`).join('\n')}`
+        : '';
+      const finalHint = base + chipSuffix;
       const res = await fetch(`/templates/${selected.id}.json`);
       if (!res.ok) throw new Error('not found');
       const files = await res.json();
-      onSelect(files, userPrompt.trim() || selected.hint);
+      onSelect(files, finalHint);
       onClose();
     } catch {
-      onSelect({}, userPrompt.trim() || selected.hint);
+      const base = userPrompt.trim() || selected.hint;
+      const chipSuffix = selectedChips.length > 0
+        ? `\n\nQuick ideas to include:\n${selectedChips.map(c => `• ${c}`).join('\n')}`
+        : '';
+      onSelect({}, base + chipSuffix);
       onClose();
     } finally {
       setLoading(false);
     }
   }
 
-  function appendChip(chip: string) {
-    setUserPrompt(p => p.trim() ? `${p.trim()}, ${chip}` : chip);
-    textareaRef.current?.focus();
+  function toggleChip(chip: string) {
+    setSelectedChips(prev =>
+      prev.includes(chip) ? prev.filter(c => c !== chip) : [...prev, chip]
+    );
   }
 
   return (
@@ -364,19 +395,36 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                   <p className="text-[11px] text-zinc-600 mt-1.5">Tip: leave blank to use the starter game as-is, or type what you want to change.</p>
                 </div>
 
-                {/* Idea chips */}
+                {/* Idea chips — checkbox toggles */}
                 <div>
-                  <p className="text-xs text-zinc-500 mb-2 font-medium">Quick ideas:</p>
+                  <p className="text-xs text-zinc-500 mb-2 font-medium">Quick ideas <span className="text-zinc-600">(select any to include)</span>:</p>
                   <div className="flex flex-wrap gap-2">
-                    {getChips(selected.hint).map(chip => (
-                      <button
-                        key={chip}
-                        onClick={() => appendChip(chip)}
-                        className="px-3 py-1.5 rounded-full text-xs bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-white/8 hover:border-white/20 transition-all duration-150 flex items-center gap-1"
-                      >
-                        <span className="text-emerald-400 font-bold">+</span> {chip}
-                      </button>
-                    ))}
+                    {getChips(selected.hint).map(chip => {
+                      const checked = selectedChips.includes(chip);
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => toggleChip(chip)}
+                          className={`px-3 py-1.5 rounded-full text-xs border transition-all duration-150 flex items-center gap-1.5 ${
+                            checked
+                              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                              : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border-white/8 hover:border-white/20'
+                          }`}
+                        >
+                          <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
+                            checked ? 'bg-emerald-500 border-emerald-400' : 'bg-transparent border-zinc-600'
+                          }`}>
+                            {checked && (
+                              <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 10" fill="none">
+                                <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </span>
+                          {chip}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

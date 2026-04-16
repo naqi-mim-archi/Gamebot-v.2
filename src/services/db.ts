@@ -236,3 +236,93 @@ export async function checkIsFollowing(followerId: string, followingId: string):
   const snap = await getDoc(followRef);
   return snap.exists();
 }
+
+// ── Friend Requests ───────────────────────────────────────────────────────────
+
+export interface FriendRequest {
+  id?: string;
+  fromUserId: string;
+  toUserId: string;
+  fromDisplayName: string;
+  fromPhotoURL: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: any;
+}
+
+export type FriendStatus = 'none' | 'pending_sent' | 'pending_received' | 'friends';
+
+export async function getFriendStatus(currentUserId: string, otherUserId: string): Promise<FriendStatus> {
+  if (!currentUserId || !otherUserId) return 'none';
+  const [sentSnap, receivedSnap] = await Promise.all([
+    getDoc(doc(db, 'friendRequests', `${currentUserId}_${otherUserId}`)),
+    getDoc(doc(db, 'friendRequests', `${otherUserId}_${currentUserId}`)),
+  ]);
+  if (sentSnap.exists()) {
+    const data = sentSnap.data();
+    return data.status === 'accepted' ? 'friends' : 'pending_sent';
+  }
+  if (receivedSnap.exists()) {
+    const data = receivedSnap.data();
+    return data.status === 'accepted' ? 'friends' : 'pending_received';
+  }
+  return 'none';
+}
+
+export async function sendFriendRequest(
+  fromUserId: string,
+  toUserId: string,
+  fromDisplayName: string,
+  fromPhotoURL: string,
+): Promise<void> {
+  const reqRef = doc(db, 'friendRequests', `${fromUserId}_${toUserId}`);
+  await setDoc(reqRef, {
+    fromUserId,
+    toUserId,
+    fromDisplayName,
+    fromPhotoURL,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function cancelFriendRequest(fromUserId: string, toUserId: string): Promise<void> {
+  await deleteDoc(doc(db, 'friendRequests', `${fromUserId}_${toUserId}`));
+}
+
+export async function acceptFriendRequest(fromUserId: string, toUserId: string): Promise<void> {
+  const reqRef = doc(db, 'friendRequests', `${fromUserId}_${toUserId}`);
+  await updateDoc(reqRef, { status: 'accepted' });
+}
+
+export async function declineFriendRequest(fromUserId: string, toUserId: string): Promise<void> {
+  await deleteDoc(doc(db, 'friendRequests', `${fromUserId}_${toUserId}`));
+}
+
+export async function removeFriend(userId: string, friendId: string): Promise<void> {
+  // Try both directions since either could have sent the original request
+  await Promise.allSettled([
+    deleteDoc(doc(db, 'friendRequests', `${userId}_${friendId}`)),
+    deleteDoc(doc(db, 'friendRequests', `${friendId}_${userId}`)),
+  ]);
+}
+
+export async function getPendingFriendRequests(userId: string): Promise<FriendRequest[]> {
+  const q = query(
+    collection(db, 'friendRequests'),
+    where('toUserId', '==', userId),
+    where('status', '==', 'pending'),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
+}
+
+export async function getFriends(userId: string): Promise<FriendRequest[]> {
+  const [sentSnap, receivedSnap] = await Promise.all([
+    getDocs(query(collection(db, 'friendRequests'), where('fromUserId', '==', userId), where('status', '==', 'accepted'))),
+    getDocs(query(collection(db, 'friendRequests'), where('toUserId', '==', userId), where('status', '==', 'accepted'))),
+  ]);
+  return [
+    ...sentSnap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest)),
+    ...receivedSnap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest)),
+  ];
+}
