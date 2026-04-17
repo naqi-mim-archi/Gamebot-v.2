@@ -1043,88 +1043,76 @@ Requirements:
 8. Use relative paths to link CSS and JS files in the HTML (e.g., <script src="src/main.js"></script>).
 9. DO NOT use ES modules (import/export). All JS must be included via <script> tags in index.html, as the files will be inlined for preview.
 10. IMPORTANT: Ensure the canvas is appended to document.body and that document.body has margin: 0 and overflow: hidden.
+11. SAFE CDN ONLY: Only use these verified CDN URLs — do NOT invent or guess library URLs:
+    - Three.js: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+    - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
+    - Never load postprocessing, ammo.js, cannon.js, or other physics/fx libraries via CDN — use canvas-native solutions instead.
+12. NO RAW BASE64 IN JS: Never place a raw base64 or SVG string as a bare JS identifier. Always wrap data URIs and base64 strings inside a quoted string literal or template literal.
+    WRONG:  var img = new Image(); img.src = data:image/png;base64,iVBOR...
+    RIGHT:  var img = new Image(); img.src = 'data:image/png;base64,iVBOR...';
+13. CHESS / BOARD GAMES: Draw pieces using canvas 2D API (fillText with Unicode ♔♕♖♗♘♙♚♛♜♝♞♟, or simple geometric shapes). Do NOT use SVG files or external image assets.
 
 Return ONLY the raw JSON object. No explanations, no markdown formatting.`;
 
 const MULTIPLAYER_ADDON = `
 
-=== MANDATORY MULTIPLAYER REQUIREMENT — READ CAREFULLY ===
+=== MULTIPLAYER MODE SELECT — MANDATORY ===
 
-The game MUST begin with a MODE SELECT SCREEN — this is non-negotiable.
-Do NOT start the game loop, do NOT show a canvas game, do NOT contact any network.
-The very first thing the player sees must be this choice:
+The game MUST support both Local and Online multiplayer.
+Show a mode-select overlay at startup. Use an HTML <div> overlay — do NOT hide or delay canvas initialisation.
 
-  ┌─────────────────────────────────────┐
-  │         Choose How to Play          │
-  │                                     │
-  │  [ 🎮  Local Multiplayer  ]         │
-  │    Both players, one keyboard       │
-  │                                     │
-  │  [ 🌐  Online Multiplayer ]         │
-  │    Play with a friend online        │
-  └─────────────────────────────────────┘
+STRUCTURE (copy this pattern exactly):
 
-Implementation — use this exact structure in your JavaScript:
+HTML in <body> — add this BEFORE the <canvas>:
+  <div id="modeOverlay" style="position:fixed;inset:0;z-index:999;background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;font-family:sans-serif;">
+    <h2 style="color:#fff;font-size:1.6rem;margin:0">Choose Mode</h2>
+    <button id="btnLocal"  style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#22c55e;color:#000;cursor:pointer;font-weight:700">🎮 Local Multiplayer</button>
+    <button id="btnOnline" style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#8b5cf6;color:#fff;cursor:pointer;font-weight:700">🌐 Online Multiplayer</button>
+    <p id="waitMsg" style="color:#aaa;font-size:0.9rem;display:none">Waiting for opponent…</p>
+  </div>
 
-  let gameMode = null; // 'local' or 'online' — set when player picks
+JavaScript — add this block (do NOT change your game logic, just add this wrapper):
 
-  function showModeSelect() {
-    // Hide the game canvas completely
-    // Render two large clickable buttons over a styled background
-    // "Local Multiplayer" button → calls startLocal()
-    // "Online Multiplayer" button → calls startOnline()
-  }
+  var gameMode = null;
 
-  function startLocal() {
+  document.getElementById('btnLocal').onclick = function() {
     gameMode = 'local';
-    hideModeSelect();
-    initGame(); // begin normal local game immediately
-  }
+    document.getElementById('modeOverlay').style.display = 'none';
+    initGame();   // ← call whatever starts your game loop
+  };
 
-  function startOnline() {
+  document.getElementById('btnOnline').onclick = function() {
     gameMode = 'online';
-    hideModeSelect();
-    showWaitingScreen(); // "Waiting for opponent..."
+    document.getElementById('btnLocal').style.display   = 'none';
+    document.getElementById('btnOnline').style.display  = 'none';
+    document.getElementById('waitMsg').style.display    = 'block';
     window.parent.postMessage({ type: 'MP_GAME_LOADED' }, '*');
-  }
+  };
 
-  // Call showModeSelect() at the very top — before anything else runs:
-  showModeSelect();
-
-LOCAL mode rules:
-- P1 controls: WASD or left side of keyboard
-- P2 controls: Arrow keys or right side of keyboard
-- Both players share one screen, no network involved at all
-
-ONLINE mode — postMessage bridge (only active when gameMode === 'online'):
-
+  // Online: listen for go-signal and opponent state
   window.addEventListener('message', function(e) {
     if (!e.data) return;
     if (e.data.type === 'MP_INIT') {
-      var playerIndex = e.data.playerIndex; // 0 = host (P1), 1 = guest (P2)
-      startGame(playerIndex); // now begin the game
+      document.getElementById('modeOverlay').style.display = 'none';
+      initGame(e.data.playerIndex);  // playerIndex: 0 = host/P1, 1 = guest/P2
     }
     if (e.data.type === 'MP_RECV') {
-      applyOpponentState(e.data.data); // render what the opponent sent
+      applyOpponentState(e.data.data);
     }
   });
 
-  // Each frame (online only): player 0 broadcasts authoritative game state,
-  // player 1 sends only their own input/position
+  // Call this each frame to send your state to the opponent (online only)
   function sendState(data) {
-    if (gameMode === 'online') {
-      window.parent.postMessage({ type: 'MP_SEND', data: data }, '*');
-    }
+    if (gameMode === 'online') window.parent.postMessage({ type: 'MP_SEND', data: data }, '*');
   }
 
-Online authority model:
-- Player 0 (host) owns ALL physics: ball/projectile movement, collisions, scoring, win/lose detection
-- Player 0 broadcasts full game state every frame via sendState()
-- Player 1 receives that state via MP_RECV and renders it — does NOT re-run physics
-- Both players see identical game state because Player 0 is the single source of truth
-
-IMPORTANT: Never skip the mode select screen. Never default to online. Never show "Waiting for Opponent" without the user first clicking "Online Multiplayer". Keyboard controls must work perfectly in local mode.
-=== END MULTIPLAYER REQUIREMENT ===
+RULES:
+- Canvas MUST be created and sized normally — the overlay sits on top of it, not instead of it.
+- initGame() MUST NOT be called until a button is clicked. The game loop does not start at page load.
+- Local mode: both players share one keyboard (P1: WASD, P2: Arrow keys — or split as appropriate for the game type).
+- Online mode: Player 0 owns all physics and broadcasts full game state every frame via sendState(). Player 1 applies received state via applyOpponentState() and sends only their own inputs.
+- NEVER call initGame() automatically on page load. NEVER default to online-only.
+=== END MULTIPLAYER ===
 `;
 
 function isMultiplayerPrompt(prompt: string): boolean {
@@ -1152,6 +1140,12 @@ Requirements:
 8. Use relative paths to link CSS and JS files (e.g., <script src="src/main.js"></script>). NO ES modules — all JS must be loaded via <script> tags so files can be inlined for preview.
 9. IMPORTANT: canvas appended to document.body; body must have margin:0 and overflow:hidden.
 10. Aim for production-quality architecture: clean separation of game logic, renderer, and UI; optimised render loops; no memory leaks.
+11. SAFE CDN ONLY: Only use these verified CDN URLs:
+    - Three.js: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+    - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
+    - Never load postprocessing, ammo.js, cannon.js, or other physics/fx libraries via CDN — implement effects with canvas/Web Audio natively.
+12. NO RAW BASE64 IN JS: Always wrap data URIs and base64 strings inside a quoted string or template literal. Never use a base64 string as a bare JS identifier.
+13. CHESS / BOARD GAMES: Draw pieces using fillText with Unicode chess symbols (♔♕♖♗♘♙♚♛♜♝♞♟) styled with canvas font. Do not use SVG or external images.
 
 Take your time to build something truly impressive. Return ONLY the raw JSON object. No explanations, no markdown.`;
 
@@ -1229,11 +1223,13 @@ app.post('/api/generate/stream', async (req, res) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  // Heartbeat every 15s — keeps the SSE connection alive through Vercel's edge
-  // proxy and CDN layers which close idle connections after ~30s of silence.
+  // Heartbeat every 5s — Vercel's edge proxy and CDN drop idle SSE connections
+  // after ~10s of silence (common during gemini-2.5-pro's thinking phase before
+  // it begins streaming tokens). SSE comment lines (': ping') are invisible to
+  // the client but keep the TCP connection alive through all proxy layers.
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) res.write(': ping\n\n');
-  }, 15000);
+  }, 5000);
 
   try {
     const geminiKey = process.env.GEMINI_API_KEY;

@@ -98,6 +98,8 @@ export async function* generateGameCodeStream(
   const decoder = new TextDecoder();
   let buffer = '';
 
+  let receivedFiles = false;
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -115,18 +117,27 @@ export async function* generateGameCodeStream(
 
         if (event.type === 'chunk') {
           yield event.text;
-        } 
+        }
         else if (event.type === 'files') {
+          receivedFiles = true;
           yield event.files;
-        } 
+        }
         else if (event.type === 'error') {
           throw new Error(event.message || 'Generation error');
         }
 
-      } catch {
-        // ignore bad SSE lines
+      } catch (e: any) {
+        // Re-throw real errors (from the block above), ignore malformed SSE lines
+        if (e?.message && !e.message.startsWith('Unexpected token')) throw e;
       }
     }
+  }
+
+  // Stream ended without a files event — most likely a Vercel function timeout
+  // or the proxy dropped the connection. Throw a descriptive error instead of
+  // silently returning, which would cause a misleading "No files generated" message.
+  if (!receivedFiles) {
+    throw new Error('Generation timed out before completing. Try Quick mode or a simpler prompt.');
   }
 }
 

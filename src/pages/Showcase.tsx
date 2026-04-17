@@ -492,6 +492,7 @@ export default function Showcase({ user }: { user?: any }) {
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCollection, setActiveCollection] = useState<string>(COLLECTIONS[0].id);
+  const [showAllCollection, setShowAllCollection] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -676,7 +677,7 @@ export default function Showcase({ user }: { user?: any }) {
                   return (
                     <button
                       key={col.id}
-                      onClick={() => setActiveCollection(col.id)}
+                      onClick={() => { setActiveCollection(col.id); setShowAllCollection(false); }}
                       className={`relative flex items-center justify-between w-full rounded-xl border p-4 transition-all duration-300 group ${col.bg} ${isActive ? col.activeBorder : 'border-transparent opacity-70 hover:opacity-100'}`}
                     >
                       <span className={`font-bold text-lg relative z-10 ${isActive ? 'text-white' : 'text-zinc-300'}`}>
@@ -701,7 +702,7 @@ export default function Showcase({ user }: { user?: any }) {
                   className="mt-6"
                 >
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                    {collectionGames.slice(0, 5).map(game => (
+                    {(showAllCollection ? collectionGames : collectionGames.slice(0, 5)).map(game => (
                       <GameCard
                         key={game.id}
                         game={game}
@@ -717,11 +718,15 @@ export default function Showcase({ user }: { user?: any }) {
                       </div>
                     )}
                   </div>
-                  {collectionGames.length > 0 && (
+                  {collectionGames.length > 5 && (
                     <div className="mt-8 flex flex-col items-center">
                       <div className="w-full h-px bg-white/10 mb-4" />
-                      <button className="flex items-center gap-1 text-sm font-medium text-zinc-400 hover:text-white transition-colors">
-                        Show all <ChevronDown className="w-4 h-4" />
+                      <button
+                        onClick={() => setShowAllCollection(prev => !prev)}
+                        className="flex items-center gap-1 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                      >
+                        {showAllCollection ? 'Show less' : `Show all ${collectionGames.length}`}
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showAllCollection ? 'rotate-180' : ''}`} />
                       </button>
                     </div>
                   )}
