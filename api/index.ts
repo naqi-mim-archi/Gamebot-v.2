@@ -191,11 +191,35 @@ app.post('/api/email/welcome', async (req, res) => {
   }
 });
 
+// ── Promo Code Validation ─────────────────────────────────────────────────────
+app.post('/api/validate-promo', async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ valid: false, error: 'No code provided' });
+
+    const normalised = code.toUpperCase().trim();
+    const snap = await db.collection('promoCodes').doc(normalised).get();
+
+    if (!snap.exists) return res.json({ valid: false, error: 'Invalid promo code' });
+
+    const data = snap.data()!;
+    if (!data.active) return res.json({ valid: false, error: 'This promo code is no longer active' });
+    if (data.maxUses > 0 && data.usedCount >= data.maxUses)
+      return res.json({ valid: false, error: 'This promo code has reached its usage limit' });
+    if (data.expiresAt && data.expiresAt.toMillis() < Date.now())
+      return res.json({ valid: false, error: 'This promo code has expired' });
+
+    res.json({ valid: true, discountPercent: data.discountPercent, code: normalised });
+  } catch (error: any) {
+    res.status(500).json({ valid: false, error: error.message });
+  }
+});
+
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
-    const { tier, userId, email, returnUrl } = req.body;
+    const { tier, userId, email, returnUrl, promoCode } = req.body;
     const stripe = getStripe();
-    
+
     let unit_amount = 0;
     let name = '';
     let credits = 0;
@@ -209,6 +233,35 @@ app.post('/api/create-checkout-session', async (req, res) => {
     else if (tier === 'topup_40') { unit_amount = 4000; name = '600 Credits Top-up'; credits = 600; mode = 'payment'; }
     else if (tier === 'topup_100') { unit_amount = 10000; name = '2000 Credits Top-up'; credits = 2000; mode = 'payment'; }
     else { return res.status(400).json({ error: 'Invalid tier' }); }
+
+    // Resolve promo code → Stripe coupon
+    let discounts: { coupon: string }[] | undefined;
+    if (promoCode) {
+      const normalised = promoCode.toUpperCase().trim();
+      const promoSnap = await db.collection('promoCodes').doc(normalised).get();
+      if (promoSnap.exists) {
+        const promoData = promoSnap.data()!;
+        if (promoData.active && !(promoData.maxUses > 0 && promoData.usedCount >= promoData.maxUses)) {
+          // Reuse existing Stripe coupon or create a new one
+          let couponId: string = promoData.stripeCouponId || '';
+          if (!couponId) {
+            const coupon = await stripe.coupons.create({
+              percent_off: promoData.discountPercent,
+              duration: 'once',
+              name: `${normalised} — ${promoData.discountPercent}% off`,
+            });
+            couponId = coupon.id;
+            // Cache coupon ID so we reuse it next time
+            await db.collection('promoCodes').doc(normalised).update({ stripeCouponId: couponId });
+          }
+          discounts = [{ coupon: couponId }];
+          // Increment usage counter
+          await db.collection('promoCodes').doc(normalised).update({
+            usedCount: FieldValue.increment(1),
+          });
+        }
+      }
+    }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -230,6 +283,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
           quantity: 1,
         },
       ],
+      ...(discounts ? { discounts } : {}),
       success_url: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: returnUrl,
     });
@@ -292,13 +346,33 @@ app.post('/api/auth/profile', async (req, res) => {
 
     if (!snap.exists) {
       const trialEndDate = Date.now() + 14 * 24 * 60 * 60 * 1000;
+
+      // Handle referral bonus
+      const { referralCode } = req.body || {};
+      let startCredits = 50;
+      let referredBy: string | null = null;
+
+      if (referralCode && referralCode !== decoded.uid) {
+        try {
+          const refSnap = await db.collection('users').doc(referralCode).get();
+          if (refSnap.exists) {
+            startCredits = 100; // +50 bonus for new user
+            referredBy = referralCode;
+            // Award referrer +50 credits
+            await db.collection('users').doc(referralCode)
+              .update({ credits: FieldValue.increment(50) });
+          }
+        } catch { /* ignore bad referral codes */ }
+      }
+
       await userRef.set({
         uid: decoded.uid,
         email: decoded.email ?? null,
         tier: '14-day-trial',
-        credits: 50,
+        credits: startCredits,
         trialEndDate,
         createdAt: FieldValue.serverTimestamp(),
+        ...(referredBy ? { referredBy } : {}),
         // Sync Google/provider display name and photo on first login
         ...(decoded.name ? { displayName: decoded.name } : {}),
         ...(decoded.picture ? { photoURL: decoded.picture } : {}),

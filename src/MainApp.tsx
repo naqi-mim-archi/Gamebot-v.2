@@ -1950,12 +1950,12 @@ setFileDiffs(diffs);
               {isPseudoFullscreen ? (
                 <div className="fixed inset-0 z-[100] bg-white">
                   <button onClick={() => setIsPseudoFullscreen(false)} className="absolute top-4 right-4 z-[101] bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"><X className="w-6 h-6" /></button>
-                  <iframe key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'} ref={iframeRef} srcDoc={bundleForPreview(files)} className="w-full h-full border-0 block" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads" allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb" allowFullScreen title="Game Preview" />
+                  <iframe key={files ? Object.entries(files).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+':'+v.length).join('|') : 'empty'} ref={iframeRef} srcDoc={bundleForPreview(files)} className="w-full h-full border-0 block" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-downloads" allow="fullscreen; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb" allowFullScreen title="Game Preview" />
                 </div>
               ) : deviceView === 'desktop' ? (
                 <div ref={previewContainerRef} className="w-full h-full relative">
                   <iframe
-                    key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
+                    key={files ? Object.entries(files).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+':'+v.length).join('|') : 'empty'}
                     ref={iframeRef}
                     srcDoc={bundleForPreview(files)}
                     className="w-full h-full border-0 block"
@@ -2003,7 +2003,7 @@ setFileDiffs(diffs);
               ) : deviceView === 'tablet' ? (
                 <div className="h-[90%] max-h-full relative rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.6)]" style={{ aspectRatio: '3/4' }}>
                   <iframe
-                    key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
+                    key={files ? Object.entries(files).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+':'+v.length).join('|') : 'empty'}
                     ref={iframeRef}
                     srcDoc={bundleForPreview(files)}
                     className="w-full h-full border-0 block bg-white"
@@ -2027,7 +2027,7 @@ setFileDiffs(diffs);
               ) : (
                 <div className="h-[90%] max-h-full relative rounded-[2rem] overflow-hidden border-[10px] border-zinc-800 shadow-[0_0_40px_rgba(0,0,0,0.8)]" style={{ aspectRatio: '9/19.5' }}>
                   <iframe
-                    key={files ? Object.keys(files).length + '-' + (files['index.html']?.length || 0) : 'empty'}
+                    key={files ? Object.entries(files).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+':'+v.length).join('|') : 'empty'}
                     ref={iframeRef}
                     srcDoc={bundleForPreview(files)}
                     className="w-full h-full border-0 block bg-white"

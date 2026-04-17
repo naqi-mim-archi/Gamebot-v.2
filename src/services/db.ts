@@ -316,6 +316,86 @@ export async function getPendingFriendRequests(userId: string): Promise<FriendRe
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
 }
 
+// ── Tutorials ─────────────────────────────────────────────────────────────────
+
+export interface Tutorial {
+  id?: string;
+  title: string;
+  description: string;
+  content: string;           // markdown-like step-by-step body
+  videoUrl?: string;         // YouTube/Vimeo embed (future)
+  gameId?: string;           // linked game (optional)
+  userId: string;
+  authorName: string;
+  authorPhoto?: string;
+  createdAt: any;
+  likes: number;
+  tags: string[];            // e.g. ['platformer', 'beginner']
+}
+
+export async function getTutorials(tag?: string): Promise<Tutorial[]> {
+  try {
+    const ref = collection(db, 'tutorials');
+    const q = tag && tag !== 'all'
+      ? query(ref, where('tags', 'array-contains', tag))
+      : query(ref);
+    const snap = await getDocs(q);
+    const tutorials = snap.docs.map(d => ({ id: d.id, ...d.data() } as Tutorial));
+    return tutorials.sort((a, b) => {
+      if ((b.likes || 0) !== (a.likes || 0)) return (b.likes || 0) - (a.likes || 0);
+      const ta = a.createdAt?.toMillis?.() || 0;
+      const tb = b.createdAt?.toMillis?.() || 0;
+      return tb - ta;
+    });
+  } catch (error) {
+    console.error('Error fetching tutorials:', error);
+    return [];
+  }
+}
+
+export async function createTutorial(data: Omit<Tutorial, 'id' | 'createdAt' | 'likes'>): Promise<string> {
+  const ref = collection(db, 'tutorials');
+  // Strip undefined values — Firestore rejects them
+  const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+  const docRef = await addDoc(ref, {
+    ...clean,
+    likes: 0,
+    createdAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function likeTutorial(tutorialId: string, userId: string): Promise<boolean> {
+  const likeId = `${tutorialId}_${userId}`;
+  const likeRef = doc(db, 'tutorialLikes', likeId);
+  const likeSnap = await getDoc(likeRef);
+  const tutRef = doc(db, 'tutorials', tutorialId);
+
+  if (likeSnap.exists()) {
+    await deleteDoc(likeRef);
+    await updateDoc(tutRef, { likes: increment(-1) });
+    return false;
+  } else {
+    await setDoc(likeRef, { tutorialId, userId, createdAt: serverTimestamp() });
+    await updateDoc(tutRef, { likes: increment(1) });
+    return true;
+  }
+}
+
+export async function deleteTutorial(tutorialId: string): Promise<void> {
+  await deleteDoc(doc(db, 'tutorials', tutorialId));
+}
+
+export async function getUserLikedTutorialIds(userId: string): Promise<Set<string>> {
+  try {
+    const q = query(collection(db, 'tutorialLikes'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    return new Set(snap.docs.map(d => d.data().tutorialId as string));
+  } catch {
+    return new Set();
+  }
+}
+
 export async function getFriends(userId: string): Promise<FriendRequest[]> {
   const [sentSnap, receivedSnap] = await Promise.all([
     getDocs(query(collection(db, 'friendRequests'), where('fromUserId', '==', userId), where('status', '==', 'accepted'))),

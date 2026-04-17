@@ -26,6 +26,7 @@ export default function Navbar({ user, onSignIn }: NavbarProps) {
     { name: 'Create', path: '/' },
     { name: 'Showcase', path: '/showcase' },
     { name: 'Pricing', path: '/pricing' },
+    { name: 'Tutorials', path: '/tutorials' },
     { name: 'About', path: '/about' },
     { name: 'Contact', path: '/contact' },
   ];

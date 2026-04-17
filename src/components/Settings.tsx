@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   User, Lock, Github, Settings as SettingsIcon,
   Check, ExternalLink, Unlink, AlertCircle,
-  Camera, Eye, EyeOff, Loader2, Coins, Upload,
+  Camera, Eye, EyeOff, Loader2, Coins, Upload, Copy, Gift,
 } from 'lucide-react';
 import {
   updateProfile,
@@ -559,6 +559,31 @@ export default function Settings({ user, userProfile, onLogout }: SettingsProps)
                   />
                 </div>
               </div>
+
+              {/* ── Referral Card ── */}
+              {user && (
+                <div className="bg-zinc-900/80 border border-white/10 rounded-2xl p-6 md:p-8">
+                  <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                    <Gift className="w-5 h-5 text-amber-400" /> Refer a Friend
+                  </h2>
+                  <p className="text-sm text-zinc-400 mb-4">
+                    Share your link — you both get <span className="text-amber-400 font-semibold">+50 credits</span> when they sign up.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-zinc-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 font-mono truncate select-all">
+                      {`${window.location.origin}/?ref=${user.uid}`}
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/?ref=${user.uid}`);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 rounded-xl text-sm font-medium transition-colors"
+                    >
+                      <Copy className="w-4 h-4" /> Copy
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
           </motion.div>

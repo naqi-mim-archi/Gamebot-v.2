@@ -18,6 +18,7 @@ import PlayShowcaseGame from './pages/PlayShowcaseGame';
 import About from './pages/About';
 import Contact from './pages/Contact';
 import UserProfilePage from './pages/UserProfile';
+import Tutorials from './pages/Tutorials';
 
 function AppRoutes() {
   const [user, setUser] = useState<any>(null);
@@ -25,6 +26,13 @@ function AppRoutes() {
   const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const navigate = useNavigate();
+
+  // Capture referral code from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) localStorage.setItem('gb_referral', ref);
+  }, []);
 
   useEffect(() => {
     let unsubscribeProfile: () => void;
@@ -35,10 +43,14 @@ function AppRoutes() {
         try {
           // Profile creation is handled server-side (Admin SDK bypasses Firestore rules)
           const idToken = await currentUser.getIdToken();
+          const referralCode = localStorage.getItem('gb_referral');
           await fetch('/api/auth/profile', {
             method: 'POST',
-            headers: { Authorization: `Bearer ${idToken}` },
+            headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ referralCode }),
           });
+          // Clear referral after use
+          localStorage.removeItem('gb_referral');
           // Then subscribe to live profile updates from Firestore
           unsubscribeProfile = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
             if (docSnap.exists()) {
@@ -90,6 +102,7 @@ function AppRoutes() {
         <Route path="/showcase" element={<Showcase user={user} />} />
         <Route path="/play/:id" element={<PlayShowcaseGame />} />
         <Route path="/profile/:uid" element={<UserProfilePage user={user} />} />
+        <Route path="/tutorials" element={<Tutorials user={user} />} />
         <Route path="/about" element={<About user={user} />} />
         <Route path="/contact" element={<Contact user={user} />} />
         <Route path="/app" element={
