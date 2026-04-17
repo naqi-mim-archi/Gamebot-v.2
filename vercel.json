@@ -8,6 +8,7 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.ts" },
+    { "source": "/__/auth/(.*)", "destination": "https://gamebot-260301-01.firebaseapp.com/__/auth/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

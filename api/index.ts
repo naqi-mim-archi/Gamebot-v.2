@@ -1118,7 +1118,8 @@ Requirements:
 9. DO NOT use ES modules (import/export). All JS must be included via <script> tags in index.html, as the files will be inlined for preview.
 10. IMPORTANT: Ensure the canvas is appended to document.body and that document.body has margin: 0 and overflow: hidden.
 11. SAFE CDN ONLY: Only use these verified CDN URLs — do NOT invent or guess library URLs:
-    - Three.js: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+    - Three.js core: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+    - Three.js OrbitControls (add AFTER Three.js core if needed): https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
     - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
     - Never load postprocessing, ammo.js, cannon.js, or other physics/fx libraries via CDN — use canvas-native solutions instead.
 12. NO RAW BASE64 IN JS: Never place a raw base64 or SVG string as a bare JS identifier. Always wrap data URIs and base64 strings inside a quoted string literal or template literal.
@@ -1141,8 +1142,13 @@ HTML in <body> — add this BEFORE the <canvas>:
   <div id="modeOverlay" style="position:fixed;inset:0;z-index:999;background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;font-family:sans-serif;">
     <h2 style="color:#fff;font-size:1.6rem;margin:0">Choose Mode</h2>
     <button id="btnLocal"  style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#22c55e;color:#000;cursor:pointer;font-weight:700">🎮 Local Multiplayer</button>
-    <button id="btnOnline" style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#8b5cf6;color:#fff;cursor:pointer;font-weight:700">🌐 Online Multiplayer</button>
+    <button id="btnOnline" style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#8b5cf6;color:#fff;cursor:pointer;font-weight:700">🤝 Play with a Friend</button>
     <p id="waitMsg" style="color:#aaa;font-size:0.9rem;display:none">Waiting for opponent…</p>
+  </div>
+  <div id="disconnectOverlay" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.85);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:sans-serif;">
+    <p style="color:#fff;font-size:1.4rem;font-weight:700;margin:0">😞 Opponent disconnected</p>
+    <p style="color:#aaa;font-size:0.95rem;margin:0">The game has ended.</p>
+    <button onclick="location.reload()" style="padding:12px 32px;font-size:1rem;border-radius:10px;border:none;background:#22c55e;color:#000;cursor:pointer;font-weight:700">Play Again</button>
   </div>
 
 JavaScript — add this block (do NOT change your game logic, just add this wrapper):
@@ -1163,7 +1169,7 @@ JavaScript — add this block (do NOT change your game logic, just add this wrap
     window.parent.postMessage({ type: 'MP_GAME_LOADED' }, '*');
   };
 
-  // Online: listen for go-signal and opponent state
+  // Online: listen for go-signal, opponent state, and disconnect
   window.addEventListener('message', function(e) {
     if (!e.data) return;
     if (e.data.type === 'MP_INIT') {
@@ -1172,6 +1178,10 @@ JavaScript — add this block (do NOT change your game logic, just add this wrap
     }
     if (e.data.type === 'MP_RECV') {
       applyOpponentState(e.data.data);
+    }
+    if (e.data.type === 'MP_OPPONENT_LEFT') {
+      var d = document.getElementById('disconnectOverlay');
+      if (d) { d.style.display = 'flex'; }
     }
   });
 
@@ -1215,7 +1225,8 @@ Requirements:
 9. IMPORTANT: canvas appended to document.body; body must have margin:0 and overflow:hidden.
 10. Aim for production-quality architecture: clean separation of game logic, renderer, and UI; optimised render loops; no memory leaks.
 11. SAFE CDN ONLY: Only use these verified CDN URLs:
-    - Three.js: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+    - Three.js core: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+    - Three.js OrbitControls (add AFTER Three.js core if needed): https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
     - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
     - Never load postprocessing, ammo.js, cannon.js, or other physics/fx libraries via CDN — implement effects with canvas/Web Audio natively.
 12. NO RAW BASE64 IN JS: Always wrap data URIs and base64 strings inside a quoted string or template literal. Never use a base64 string as a bare JS identifier.

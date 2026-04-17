@@ -34,6 +34,7 @@ export default function PlayShowcaseGame() {
     },
     onOpponentDisconnected: () => {
       setMpActive(false);
+      iframeRef.current?.contentWindow?.postMessage({ type: 'MP_OPPONENT_LEFT' }, '*');
     },
   });
 

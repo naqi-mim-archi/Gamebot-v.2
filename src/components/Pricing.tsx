@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Sparkles, Loader2, Zap, Tag, X, CheckCircle2 } from 'lucide-react';
+import { Check, Sparkles, Loader2, Zap, Tag, X, CheckCircle2, Gift } from 'lucide-react';
 import TopNav from './TopNav';
 import Navbar from './Navbar';
 import Footer from './Footer';
@@ -11,6 +11,108 @@ interface PricingProps {
   user?: any;
   userProfile?: any;
   onLogout?: () => void;
+}
+
+// ── Higgsfield-style promo claim modal ───────────────────────────────────────
+function PromoClaimModal({
+  promo,
+  tierName,
+  originalPrice,
+  discountedPrice,
+  onClaim,
+  onClose,
+}: {
+  promo: { code: string; discountPercent: number };
+  tierName: string;
+  originalPrice: string;
+  discountedPrice: string;
+  onClaim: () => void;
+  onClose: () => void;
+}) {
+  const [seconds, setSeconds] = useState(600); // 10-min countdown for urgency
+  const timer = useRef<ReturnType<typeof setInterval>>();
+
+  useEffect(() => {
+    timer.current = setInterval(() => setSeconds(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(timer.current);
+  }, []);
+
+  const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const ss = String(seconds % 60).padStart(2, '0');
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        transition={{ type: 'spring', damping: 20, stiffness: 280 }}
+        className="relative w-full max-w-sm bg-zinc-950 border border-white/10 rounded-3xl p-8 text-center shadow-2xl overflow-hidden"
+      >
+        {/* Background glow */}
+        <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent pointer-events-none" />
+
+        <button onClick={onClose} className="absolute top-4 right-4 text-zinc-600 hover:text-white transition-colors">
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Gift icon */}
+        <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+          <Gift className="w-8 h-8 text-emerald-400" />
+        </div>
+
+        {/* Headline */}
+        <p className="text-zinc-400 text-sm uppercase tracking-widest font-bold mb-2">Exclusive offer</p>
+        <h2 className="text-3xl font-display font-black text-white leading-tight mb-1">
+          You're getting
+        </h2>
+        <h2 className="text-5xl font-display font-black text-emerald-400 leading-tight mb-4">
+          {promo.discountPercent}% OFF
+        </h2>
+        <p className="text-zinc-400 text-sm mb-6">
+          on <span className="text-white font-semibold">{tierName}</span> — limited time offer
+        </p>
+
+        {/* Applied code badge */}
+        <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 mb-6">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-emerald-300 font-mono font-bold tracking-wider text-sm">{promo.code}</span>
+          <span className="text-zinc-500 text-sm">promo code is applied</span>
+        </div>
+
+        {/* Price + countdown row */}
+        <div className="flex items-center justify-center gap-6 mb-8">
+          <div>
+            <p className="text-emerald-400 text-2xl font-bold">{promo.discountPercent}% OFF</p>
+            <p className="text-zinc-600 text-xs">With promo</p>
+          </div>
+          <div className="w-px h-10 bg-white/10" />
+          <div>
+            <p className="text-white text-2xl font-bold font-mono">{mm}:{ss}</p>
+            <div className="flex gap-3 text-zinc-600 text-[10px] uppercase tracking-wider mt-0.5">
+              <span>minutes</span>
+              <span>seconds</span>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA */}
+        <button
+          onClick={onClaim}
+          className="w-full py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-lg transition-all shadow-[0_0_30px_rgba(16,185,129,0.4)] hover:shadow-[0_0_40px_rgba(16,185,129,0.6)] active:scale-95"
+        >
+          Claim {discountedPrice}/mo →
+        </button>
+        <p className="text-zinc-600 text-xs mt-3">Was {originalPrice}/mo · Cancel anytime</p>
+      </motion.div>
+    </motion.div>
+  );
 }
 
 // Base prices in cents
@@ -34,6 +136,9 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoApplied, setPromoApplied] = useState<{ code: string; discountPercent: number } | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
+
+  // Claim modal state
+  const [claimModal, setClaimModal] = useState<{ tierId: string; tierName: string; originalPrice: string; discountedPrice: string } | null>(null);
 
   const tiers = [
     {
@@ -116,9 +221,22 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
     }
   };
 
-  const handleUpgrade = async (tierId: string) => {
+  const handleUpgrade = (tierId: string) => {
     if (!user) { navigate('/app'); return; }
 
+    // If a promo is applied and it's a subscription tier, show the claim modal first
+    if (promoApplied && TIER_PRICES[tierId]) {
+      const tier = tiers.find(t => t.tierId === tierId)!;
+      const discounted = applyDiscount(TIER_PRICES[tierId], promoApplied.discountPercent);
+      setClaimModal({ tierId, tierName: tier.name, originalPrice: tier.basePrice, discountedPrice: discounted });
+      return;
+    }
+
+    proceedToCheckout(tierId);
+  };
+
+  const proceedToCheckout = async (tierId: string) => {
+    setClaimModal(null);
     setLoadingTier(tierId);
     setCheckoutError(null);
     try {
@@ -183,66 +301,6 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
           </p>
         </motion.div>
 
-        {/* ── Promo Code ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="max-w-md mx-auto mb-10"
-        >
-          <AnimatePresence mode="wait">
-            {promoApplied ? (
-              <motion.div
-                key="applied"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="flex items-center justify-between px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30"
-              >
-                <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>
-                    <span className="font-bold">{promoApplied.code}</span> applied —{' '}
-                    <span className="font-bold">{promoApplied.discountPercent}% off</span> your subscription
-                  </span>
-                </div>
-                <button
-                  onClick={() => setPromoApplied(null)}
-                  className="text-zinc-500 hover:text-white transition-colors ml-3 shrink-0"
-                  title="Remove promo"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </motion.div>
-            ) : (
-              <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                    <input
-                      type="text"
-                      value={promoInput}
-                      onChange={e => { setPromoInput(e.target.value.toUpperCase()); setPromoError(null); }}
-                      onKeyDown={e => e.key === 'Enter' && handleApplyPromo()}
-                      placeholder="Promo code"
-                      className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 transition-colors font-mono tracking-wider"
-                    />
-                  </div>
-                  <button
-                    onClick={handleApplyPromo}
-                    disabled={promoLoading || !promoInput.trim()}
-                    className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/10 text-sm font-bold text-white disabled:opacity-40 transition-colors flex items-center gap-2 shrink-0"
-                  >
-                    {promoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
-                  </button>
-                </div>
-                {promoError && (
-                  <p className="text-rose-400 text-xs mt-2 pl-1">{promoError}</p>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
 
         {/* Checkout error */}
         {checkoutError && (
@@ -383,6 +441,20 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
       </main>
 
       <Footer />
+
+      {/* Higgsfield-style promo claim popup */}
+      <AnimatePresence>
+        {claimModal && promoApplied && (
+          <PromoClaimModal
+            promo={promoApplied}
+            tierName={claimModal.tierName}
+            originalPrice={claimModal.originalPrice}
+            discountedPrice={claimModal.discountedPrice}
+            onClaim={() => proceedToCheckout(claimModal.tierId)}
+            onClose={() => setClaimModal(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
