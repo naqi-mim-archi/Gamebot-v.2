@@ -1,5 +1,10 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getDatabase } from 'firebase/database';
@@ -12,11 +17,13 @@ const requiredVars = [
   'VITE_FIREBASE_PROJECT_ID',
   'VITE_FIREBASE_APP_ID',
 ];
-const missing = requiredVars.filter(k => !env[k]);
+
+const missing = requiredVars.filter((k) => !env[k]);
+
 if (missing.length > 0) {
   throw new Error(
     `Missing Firebase environment variables: ${missing.join(', ')}. ` +
-    'Create a .env file in the project root — see .env.example for the required keys.'
+      'Create a .env file in the project root — see .env.example for the required keys.'
   );
 }
 
@@ -35,4 +42,18 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const rtdb = getDatabase(app);
+
 export const googleProvider = new GoogleAuthProvider();
+
+googleProvider.setCustomParameters({
+  prompt: 'select_account',
+});
+
+export async function signInWithGoogle() {
+  const result = await signInWithPopup(auth, googleProvider);
+  return result.user;
+}
+
+export async function logOut() {
+  await signOut(auth);
+}
