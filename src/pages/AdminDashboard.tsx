@@ -199,7 +199,6 @@ function TabUsers({ user, onError }: any) {
   };
 
   const filtered = users.filter(u => u.email?.toLowerCase().includes(search.toLowerCase()) || u.displayName?.toLowerCase().includes(search.toLowerCase()));
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">

@@ -1546,7 +1546,8 @@ app.get('/api/admin/stats', requireAdmin, async (req: any, res) => {
 // 2. Users Management
 app.get('/api/admin/users', requireAdmin, async (req: any, res) => {
   try {
-    const snapshot = await req.db.collection('users').orderBy('createdAt', 'desc').limit(100).get();
+    // Changed limit(100) to limit(1000)
+    const snapshot = await req.db.collection('users').orderBy('createdAt', 'desc').limit(1000).get();
     res.json({ users: snapshot.docs.map((doc: any) => ({ uid: doc.id, ...doc.data() })) });
   } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
