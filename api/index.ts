@@ -283,7 +283,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
           quantity: 1,
         },
       ],
-      ...(discounts ? { discounts } : {}),
+      ...(discounts ? { discounts } : { allow_promotion_codes: true }),
       success_url: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: returnUrl,
     });
@@ -1498,6 +1498,156 @@ Return ONLY the enhanced prompt text. No markdown, no filler, no explanations.`,
     console.error('Enhance/finalize error:', error);
     res.status(500).json({ error: error.message });
   }
+});
+// ── ADMIN MIDDLEWARE ────────────────────────────────────────────────────────
+const ADMIN_EMAILS = ['tests@mim.archis']; // Replace with your actual email
+
+async function requireAdmin(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing auth token' });
+  }
+  
+  try {
+    const db = getFirebaseAdmin();
+    if (!db) return res.status(500).json({ error: 'DB Error' });
+    
+    const decoded = await getAuth().verifyIdToken(authHeader.slice(7));
+    if (!ADMIN_EMAILS.includes(decoded.email || '')) {
+      return res.status(403).json({ error: 'Forbidden: Admins only' });
+    }
+    
+    req.adminUser = decoded;
+    req.db = db;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+// ── ADMIN ENDPOINTS ─────────────────────────────────────────────────────────
+
+// 1. Stats & Overview
+app.get('/api/admin/stats', requireAdmin, async (req: any, res) => {
+  try {
+    const db = req.db;
+    const usersCount = (await db.collection('users').count().get()).data().count;
+    const gamesCount = (await db.collection('games').count().get()).data().count;
+    
+    const recentUsersSnap = await db.collection('users').orderBy('createdAt', 'desc').limit(5).get();
+    const recentUsers = recentUsersSnap.docs.map((d: any) => ({ uid: d.id, ...d.data() }));
+
+    res.json({ users: usersCount, games: gamesCount, recentUsers });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Users Management
+app.get('/api/admin/users', requireAdmin, async (req: any, res) => {
+  try {
+    const snapshot = await req.db.collection('users').orderBy('createdAt', 'desc').limit(100).get();
+    res.json({ users: snapshot.docs.map((doc: any) => ({ uid: doc.id, ...doc.data() })) });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/admin/update-user', requireAdmin, async (req: any, res) => {
+  try {
+    const { targetUid, credits, tier } = req.body;
+    const updates: any = {};
+    if (credits !== undefined) updates.credits = Number(credits);
+    if (tier !== undefined) updates.tier = tier;
+    await req.db.collection('users').doc(targetUid).update(updates);
+    res.json({ success: true });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/admin/users/:uid', requireAdmin, async (req: any, res) => {
+  try {
+    await getAuth().deleteUser(req.params.uid); // Delete from Firebase Auth
+    await req.db.collection('users').doc(req.params.uid).delete(); // Delete from Firestore
+    res.json({ success: true });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+// 3. Games Moderation
+app.get('/api/admin/games', requireAdmin, async (req: any, res) => {
+  try {
+    const snap = await req.db.collection('games').orderBy('createdAt', 'desc').limit(100).get();
+    res.json({ games: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/admin/games/:id', requireAdmin, async (req: any, res) => {
+  try {
+    await req.db.collection('games').doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+// 4. Tutorials Moderation
+app.get('/api/admin/tutorials', requireAdmin, async (req: any, res) => {
+  try {
+    const snap = await req.db.collection('tutorials').orderBy('createdAt', 'desc').limit(100).get();
+    res.json({ tutorials: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/admin/tutorials/:id', requireAdmin, async (req: any, res) => {
+  try {
+    await req.db.collection('tutorials').doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+// 5. Promo Codes
+app.post('/api/admin/create-promo', requireAdmin, async (req: any, res) => {
+  try {
+    const { code, discountPercent } = req.body;
+    await req.db.collection('promoCodes').doc(code.toUpperCase()).set({
+      discountPercent: Number(discountPercent),
+      maxUses: 100,
+      usedCount: 0,
+      active: true,
+      createdAt: FieldValue.serverTimestamp()
+    });
+    res.json({ success: true });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+// 6. Stripe Transactions & MRR
+app.get('/api/admin/transactions', requireAdmin, async (req: any, res) => {
+  try {
+    const stripe = getStripe();
+    // Get recent successful charges
+    const charges = await stripe.charges.list({ limit: 20 });
+    // Calculate rough MRR from active subscriptions
+    const subs = await stripe.subscriptions.list({ status: 'active', limit: 100 });
+    const mrr = subs.data.reduce((acc, sub) => acc + (sub.plan.amount || 0), 0);
+    
+    res.json({ 
+      transactions: charges.data.map(c => ({
+        id: c.id,
+        amount: c.amount,
+        email: c.billing_details.email,
+        status: c.status,
+        date: c.created
+      })), 
+      mrr: mrr 
+    });
+  } catch (error: any) { 
+    // If Stripe isn't configured yet, don't crash the panel
+    res.json({ transactions: [], mrr: 0, error: 'Stripe not fully configured' });
+  }
+});
+
+// 7. Toggle Game Visibility
+app.patch('/api/admin/games/:id/visibility', requireAdmin, async (req: any, res) => {
+  try {
+    const { isPublic } = req.body;
+    await req.db.collection('games').doc(req.params.id).update({ isPublic });
+    res.json({ success: true });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
 export default app;

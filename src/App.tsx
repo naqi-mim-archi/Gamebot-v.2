@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
+
 import MainApp from './MainApp';
 import WelcomeScreen from './components/WelcomeScreen';
 import AuthModal from './components/AuthModal';
 import Dashboard from './components/Dashboard';
 import Pricing from './components/Pricing';
 import Settings from './components/Settings';
-import { auth } from './services/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { UserProfile } from './services/db';
-import { onSnapshot, doc } from 'firebase/firestore';
-import { db } from './services/firebase';
 
 import Home from './pages/Home';
 import Showcase from './pages/Showcase';
@@ -19,6 +16,16 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import UserProfilePage from './pages/UserProfile';
 import Tutorials from './pages/Tutorials';
+import AdminDashboard from './pages/AdminDashboard'; // <-- MOVED TO TOP
+
+import { auth } from './services/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { UserProfile } from './services/db';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { db } from './services/firebase';
+
+// Add your admin emails here
+const ADMIN_EMAILS = ['tests@mim.archis']; 
 
 function AppRoutes() {
   const [user, setUser] = useState<any>(null);
@@ -41,7 +48,6 @@ function AppRoutes() {
       setUser(currentUser);
       if (currentUser) {
         try {
-          // Profile creation is handled server-side (Admin SDK bypasses Firestore rules)
           const idToken = await currentUser.getIdToken();
           const referralCode = localStorage.getItem('gb_referral');
           await fetch('/api/auth/profile', {
@@ -49,9 +55,8 @@ function AppRoutes() {
             headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ referralCode }),
           });
-          // Clear referral after use
           localStorage.removeItem('gb_referral');
-          // Then subscribe to live profile updates from Firestore
+          
           unsubscribeProfile = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
             if (docSnap.exists()) {
               setUserProfile(docSnap.data() as UserProfile);
@@ -72,10 +77,6 @@ function AppRoutes() {
       if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
-
-  const handleStart = (prompt: string) => {
-    navigate('/app', { state: { initialPrompt: prompt } });
-  };
 
   const handleLogout = async () => {
     try {
@@ -123,6 +124,19 @@ function AppRoutes() {
         <Route path="/settings" element={
           <Settings user={user} userProfile={userProfile} onLogout={handleLogout} />
         } />
+        
+        {/* SECURE ADMIN ROUTE */}
+        <Route 
+          path="/admin/*" 
+          element={
+            user && user.email && ADMIN_EMAILS.includes(user.email) ? (
+              <AdminDashboard user={user} />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
+        
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
@@ -157,8 +171,6 @@ function MainAppWrapper({ user, userProfile, onRequireAuth, onLogout, onGoHome }
     />
   );
 }
-
-import { HelmetProvider } from 'react-helmet-async';
 
 export default function App() {
   return (

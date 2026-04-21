@@ -302,6 +302,7 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
         </motion.div>
 
 
+
         {/* Checkout error */}
         {checkoutError && (
           <div className="max-w-5xl mx-auto mb-6 px-4 py-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm text-center">
@@ -371,21 +372,28 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
                   ))}
                 </ul>
 
-                <button
-                  onClick={() => handleUpgrade(tier.tierId)}
-                  disabled={loadingTier !== null}
-                  className={`w-full py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
-                    tier.highlighted
-                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
-                      : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'
-                  } disabled:opacity-70`}
-                >
-                  {loadingTier === tier.tierId ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    tier.buttonText
-                  )}
-                </button>
+                {userProfile?.tier === tier.tierId ? (
+                  <div className="w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 cursor-default">
+                    <Check className="w-4 h-4" />
+                    Current Plan
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleUpgrade(tier.tierId)}
+                    disabled={loadingTier !== null}
+                    className={`w-full py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+                      tier.highlighted
+                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+                        : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'
+                    } disabled:opacity-70`}
+                  >
+                    {loadingTier === tier.tierId ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      tier.buttonText
+                    )}
+                  </button>
+                )}
               </motion.div>
             );
           })}
