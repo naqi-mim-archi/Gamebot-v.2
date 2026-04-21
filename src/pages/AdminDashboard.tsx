@@ -532,7 +532,7 @@ function TabBilling({ user, onError }: any) {
             </thead>
             <tbody className="divide-y divide-white/5">
               {transactions.length === 0 ? (
-                <tr><td colSpan={3} className="p-12 text-center text-zinc-500">No recent transactions or Stripe API key missing.</td></tr>
+                <tr><td colSpan={3} className="p-12 text-center text-zinc-500">No Recent Transactions</td></tr>
               ) : transactions.map(t => (
                 <tr key={t.id} className="hover:bg-white/5 transition-colors">
                   <td className="px-6 py-4 text-zinc-300 font-medium">{t.email}</td>
