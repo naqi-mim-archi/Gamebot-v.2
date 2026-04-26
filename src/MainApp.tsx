@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench, Share2, LayoutTemplate, Crosshair } from 'lucide-react';
+import { Camera, Play, Terminal, Sparkles, Send, Loader2, RefreshCw, Mic, MicOff, Paperclip, Wand2, X, FileText, Monitor, Tablet, Smartphone, Maximize, CreditCard, ChevronRight, ChevronDown, File as FileIcon, Folder, MoreVertical, AlertTriangle, Download, Github, SplitSquareHorizontal, Copy, CheckCircle2, XCircle, Wrench, Share2, LayoutTemplate, Crosshair, Zap, Search } from 'lucide-react';
 
 function DiscordIcon({ className }: { className?: string }) {
   return (
@@ -12,7 +12,8 @@ function DiscordIcon({ className }: { className?: string }) {
 import { generateGameCode, generateGameCodeStream, getEnhanceQuestions, finalizeEnhancedPrompt, EnhanceQuestion, FileAttachment, FileSystem, bundleForPreview } from './services/geminiService';
 import { saveUserGame, updateUserGame, deleteUserGame } from './services/db';
 import { useNavigate } from 'react-router-dom';
-import TopNav from './components/TopNav';
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import SteamLibraryModal from './components/SteamLibraryModal';
 import GameTemplatesModal from './components/GameTemplatesModal';
 import CreativeKickoffModal from './components/CreativeKickoffModal';
@@ -1314,7 +1315,7 @@ setFileDiffs(diffs);
         return (
           <div 
             key={node.path}
-            className={`group relative flex items-center justify-between py-1 px-2 cursor-pointer text-sm transition-colors ${isSelected ? 'bg-emerald-500/10 text-emerald-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`}
+            className={`group relative flex items-center justify-between py-1 px-2 cursor-pointer text-sm transition-colors ${isSelected ? 'bg-[#FF00C0]/10 text-[#FF00C0]' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
           >
             <div className="flex items-center gap-2 overflow-hidden flex-1" onClick={() => setSelectedFile(node.path)}>
@@ -1414,17 +1415,11 @@ setFileDiffs(diffs);
   };
 
   return (
-    // Fixed layout container that prevents global scrolling
     <div
-      className="fixed inset-0 overflow-hidden bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-emerald-500/30 pt-[72px]"
+      className="fixed inset-0 overflow-hidden bg-[#050505] text-zinc-50 flex flex-col font-sans selection:bg-[#FF00C0]/20 pt-[80px]"
       style={{ '--left-width': `${leftPanelWidth}%` } as React.CSSProperties}
     >
-      <TopNav
-        user={user} 
-        userProfile={userProfile} 
-        onLogin={onRequireAuth} 
-        onLogout={onLogout} 
-      />
+      <Navbar user={user} userProfile={userProfile} onSignIn={onRequireAuth} onLogout={onLogout} />
 
       <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
         {/* Left Panel: Controls & Logs */}
@@ -1436,7 +1431,7 @@ setFileDiffs(diffs);
                 ? 'border-red-500/70 animate-[shake_0.35s_ease-in-out]'
                 : files
                   ? 'border-white/5'
-                  : 'border-white/10 focus-within:border-emerald-500/40'
+                  : 'border-white/10 focus-within:border-[#FF00C0]/40'
             }`}>
               <span className="text-[10px] font-semibold uppercase tracking-widest shrink-0 select-none text-zinc-600">
                 Title{!files && <span className="text-red-500 ml-0.5">*</span>}
@@ -1469,10 +1464,10 @@ setFileDiffs(diffs);
                 <span className="text-zinc-600 shrink-0 mt-0.5">{'>'}</span>
                 <span className={`flex-1 break-words min-w-0 ${
                   log.type === 'error' ? 'text-red-400' :
-                  log.type === 'success' ? 'text-emerald-400' :
+                  log.type === 'success' ? 'text-[#FF00C0]' :
                   log.type === 'system' ? 'text-zinc-300' :
-                  log.type === 'revision' ? 'text-blue-400 font-semibold' :
-                  log.type === 'generation-progress' ? 'text-emerald-400 font-semibold' :
+                  log.type === 'revision' ? 'text-[#00AFFF] font-semibold' :
+                  log.type === 'generation-progress' ? 'text-[#FF00C0] font-semibold' :
                   'text-zinc-500'
                 }`}>
                   {log.text.split('\n').map((line, li) => {
@@ -1501,10 +1496,10 @@ setFileDiffs(diffs);
                 {log.type === 'revision' && log.snapshot && (
                   <button
                     onClick={() => handleRollback(log.snapshot!)}
-                    className="shrink-0 text-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                    className="shrink-0 text-[10px] bg-gradient-to-r from-[#FF00C0] to-[#00AFFF] text-white font-medium px-2.5 py-1 rounded-md transition-all hover:opacity-80 flex items-center gap-1 shadow-[0_0_10px_rgba(255,0,192,0.2)]"
                     title="Restore this version"
                   >
-                    <RefreshCw className="w-2.5 h-2.5" /> Restore
+                    <RefreshCw className="w-3 h-3" /> Restore
                   </button>
                 )}
                 {log.retryPrompt && !isGenerating && (
@@ -1544,7 +1539,7 @@ setFileDiffs(diffs);
                         title={att.name}
                         className="flex items-center gap-1.5 bg-zinc-900 border border-white/8 rounded-lg px-2 py-1.5 max-w-[140px]"
                       >
-                        <FileText className="w-3 h-3 text-zinc-400 shrink-0" />
+                        <FileText className="w-3 h-3 text-[#FF00C0] shrink-0" />
                         <span className="text-zinc-400 text-[10px] truncate">{att.name}</span>
                       </div>
                     );
@@ -1556,8 +1551,8 @@ setFileDiffs(diffs);
                   {log.files.map((f, i) => (
                     <div key={i} className="flex items-center justify-between bg-zinc-900/50 p-2 rounded border border-white/5">
                       <div className="flex items-center gap-2">
-                        {f.status === 'generating' && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />}
-                        {f.status === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+                        {f.status === 'generating' && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FF00C0]" />}
+                        {f.status === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-[#FF00C0]" />}
                         {f.status === 'error' && <XCircle className="w-3.5 h-3.5 text-red-500" />}
                         <span className="text-zinc-300 font-mono text-xs">{f.name}</span>
                       </div>
@@ -1566,7 +1561,7 @@ setFileDiffs(diffs);
                           <span className="text-red-400 text-[10px] truncate max-w-[150px]" title={f.errorMsg}>{f.errorMsg}</span>
                           <button 
                             onClick={() => handleGenerate(`Fix the syntax error in ${f.name}: ${f.errorMsg}`)}
-                            className="flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2 py-1 rounded text-[10px] transition-colors border border-red-500/20"
+                            className="flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2 py-1 rounded-md text-[10px] transition-colors border border-red-500/20"
                           >
                             <Wrench className="w-3 h-3" />
                             Auto-Fix
@@ -1607,11 +1602,11 @@ setFileDiffs(diffs);
                 )}
                 {/* Existing Attachment Badges */}
                 {attachments.map((file, index) => (
-                   <div key={index} className="flex items-center gap-2 bg-zinc-900 text-zinc-300 text-xs px-2 py-1 rounded-md border border-white/10">
-                    <FileText className="w-3 h-3 text-emerald-400" />
-                    <span className="truncate max-w-[120px]">{file.name}</span>
+                   <div key={index} className="flex items-center gap-2 bg-zinc-900 text-zinc-300 text-xs px-2 py-1 rounded-lg border border-white/10">
+                    <FileText className="w-3.5 h-3.5 text-[#FF00C0]" />
+                    <span className="truncate max-w-[120px] font-medium">{file.name}</span>
                     <button onClick={() => removeAttachment(index)} className="hover:text-red-400 ml-1">
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ))}
@@ -1620,20 +1615,24 @@ setFileDiffs(diffs);
             
             {/* Generation Mode Toggle */}
             {!files && (
-              <div className="flex items-center gap-2 mb-2">
-                <div className="flex gap-0.5 rounded-lg bg-zinc-800/60 border border-white/5 p-0.5">
+              <div className="flex items-center gap-3 mb-2 px-1">
+                <div className="flex gap-1 rounded-xl bg-zinc-900/80 border border-[#FF00C0]/30 p-1 shadow-[0_0_10px_rgba(255,0,192,0.15)] transition-all">
                   <button
                     onClick={() => { setGenerationMode('quick'); localStorage.setItem('gb_gen_mode', 'quick'); }}
-                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${generationMode === 'quick' ? 'bg-amber-500 text-zinc-900 shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${generationMode === 'quick' ? 'bg-white/10 text-[#00AFFF]' : 'text-zinc-500 hover:text-zinc-300'}`}
                     title="Quick: skips enhance & planning, uses gemini-2.5-flash — 3 credits"
-                  >⚡ Quick</button>
+                  >
+                    <Zap className="w-3.5 h-3.5 text-[#FF00C0]" fill="currentColor" /> Quick
+                  </button>
                   <button
                     onClick={() => { setGenerationMode('detailed'); localStorage.setItem('gb_gen_mode', 'detailed'); }}
-                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${generationMode === 'detailed' ? 'bg-violet-500 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${generationMode === 'detailed' ? 'bg-white/10 text-[#00AFFF]' : 'text-zinc-500 hover:text-zinc-300'}`}
                     title="Graphic & Detailed: enhance + planning step, uses gemini-2.5-pro — 7 credits"
-                  >✨ Detailed</button>
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#FF00C0]" fill="currentColor" /> Detailed
+                  </button>
                 </div>
-                <span className="text-[10px] text-zinc-500">
+                <span className="text-[10px] text-zinc-500 font-medium">
                   {generationMode === 'quick' ? '3 credits · fast' : '7 credits · best quality'}
                 </span>
               </div>
@@ -1667,7 +1666,7 @@ setFileDiffs(diffs);
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isGenerating || isEnhancing}
-                  className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors disabled:opacity-50"
+                  className="p-1.5 text-zinc-400 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10 rounded-xl transition-colors disabled:opacity-50"
                   title="Attach Files"
                 >
                   <Paperclip className="w-4 h-4" />
@@ -1676,7 +1675,7 @@ setFileDiffs(diffs);
                 <button
                   onClick={toggleListening}
                   disabled={isGenerating || isEnhancing}
-                  className={`p-1.5 rounded-xl transition-colors disabled:opacity-50 ${isListening ? 'text-red-400 bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'text-zinc-400 hover:text-white hover:bg-white/10'}`}
+                  className={`p-1.5 rounded-xl transition-colors disabled:opacity-50 ${isListening ? 'text-red-400 bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'text-zinc-400 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10'}`}
                   title={isListening ? "Stop Listening" : "Voice Input"}
                 >
                   {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -1686,37 +1685,48 @@ setFileDiffs(diffs);
                   <button
                     onClick={handleEnhancePrompt}
                     disabled={isGenerating || enhanceModal !== 'closed' || !prompt.trim()}
-                    className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1"
+                    className="p-1.5 text-zinc-500 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1"
                     title="Enhance Prompt"
                   >
                     <Wand2 className="w-4 h-4" />
                     <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Enhance</span>
                   </button>
                 )}
+                <button
+                  onClick={() => { setFocusModeActive(v => !v); if (focusPoint) setFocusPoint(null); }}
+                  title={focusModeActive ? 'Cancel Focus' : focusPoint ? 'Clear focus point' : 'Focus Mode'}
+                  className={`p-1.5 rounded-xl transition-colors shrink-0 ${
+                    focusModeActive ? 'bg-[#FF00C0]/20 border border-[#FF00C0]/30 text-[#FF00C0]' :
+                    focusPoint ? 'bg-[#00AFFF]/20 border border-[#00AFFF]/30 text-[#00AFFF]' :
+                    'text-zinc-500 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10'
+                  }`}
+                >
+                  <Crosshair className="w-4 h-4" />
+                </button>
               </div>
 
               {isGenerating ? (
                 <button
                   onClick={() => abortControllerRef.current?.abort()}
-                  className="absolute bottom-3 right-3 px-4 py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 hover:text-red-300 rounded-xl font-bold transition-all flex items-center gap-2"
+                  className="absolute bottom-3 right-3 px-3 py-1.5 text-xs bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 hover:text-red-400 rounded-xl font-bold transition-all flex items-center gap-1.5"
                   title="Stop generation"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" strokeWidth={3} />
                   <span className="hidden sm:inline">Stop</span>
                 </button>
               ) : (
                 <button
                   onClick={() => handleGenerate(prompt)}
                   disabled={!prompt.trim() && attachments.length === 0 || (!files && !projectTitle.trim() && kickoffDone)}
-                  className="absolute bottom-3 right-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-zinc-950 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  className="absolute bottom-3 right-3 px-4 py-1.5 text-xs bg-gradient-to-r from-[#FF00C0] to-[#00AFFF] hover:opacity-90 text-white rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(255,0,192,0.3)]"
                 >
                   <span className="hidden sm:inline">Generate</span>
                   {!files && (
-                    <span className="hidden sm:inline text-[10px] font-normal opacity-70">
+                    <span className="hidden sm:inline font-normal opacity-75">
                       ({generationMode === 'quick' ? 3 : 7}cr)
                     </span>
                   )}
-                  <Send className="w-4 h-4" />
+                  <Send className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
@@ -1730,7 +1740,7 @@ setFileDiffs(diffs);
 
         {/* Resizer */}
         <div 
-          className="hidden md:block w-1 bg-white/5 hover:bg-emerald-500/50 cursor-col-resize shrink-0 transition-colors z-10"
+          className="hidden md:block w-1 bg-white/5 hover:bg-[#FF00C0]/50 cursor-col-resize shrink-0 transition-colors z-10"
           onMouseDown={handleMouseDownResizer}
         />
 
@@ -1756,90 +1766,86 @@ setFileDiffs(diffs);
           
           {files && (
             <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-              <div className="flex bg-zinc-900 rounded-md p-1 border border-zinc-800 shrink-0">
-                <button
-                  onClick={() => setDeviceView('desktop')}
-                  className={`p-1.5 rounded-sm transition-colors ${deviceView === 'desktop' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  title="Desktop View"
-                >
-                  <Monitor className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setDeviceView('tablet')}
-                  className={`p-1.5 rounded-sm transition-colors ${deviceView === 'tablet' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  title="Tablet View"
-                >
-                  <Tablet className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setDeviceView('mobile')}
-                  className={`p-1.5 rounded-sm transition-colors ${deviceView === 'mobile' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  title="Mobile View"
-                >
-                  <Smartphone className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="block w-px h-6 bg-zinc-800 mx-1 shrink-0"></div>
-              <button 
-                onClick={handleRefreshIframe}
-                className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
-                title="Restart Game"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleFullscreen}
-                className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
-                title="Fullscreen"
-              >
-                <Maximize className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => { setFocusModeActive(v => !v); if (focusPoint) setFocusPoint(null); }}
-                title={focusModeActive ? 'Cancel Focus' : focusPoint ? 'Clear focus point (click to set new)' : 'Focus Mode — click a spot on the preview to target changes'}
-                className={`p-1.5 rounded-lg transition-colors shrink-0 ${
-                  focusModeActive ? 'bg-orange-500/20 border border-orange-500/30 text-orange-400' :
-                  focusPoint ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400' :
-                  'text-zinc-500 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Crosshair className="w-4 h-4" />
-              </button>
-              <div className="w-px h-6 bg-zinc-800 mx-0.5 sm:mx-1 shrink-0"></div>
-              <button
-                onClick={() => canGithubSync
-                  ? setGithubSyncConfig(prev => ({ ...prev, isOpen: true }))
-                  : alert('GitHub Sync is available on Creator, Pro, and Studio tiers.')}
-                className={`p-2 rounded-md transition-colors shrink-0 ${canGithubSync ? 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800' : 'text-zinc-600 cursor-not-allowed'}`}
-                title={canGithubSync ? 'Sync to GitHub' : 'GitHub Sync (Upgrade Required)'}
-              >
-                <Github className="w-4 h-4" />
-              </button>
-              {userProfile?.discordWebhookUrl && (
-                <button
-                  onClick={() => {
-                    setDiscordShare(prev => ({
-                      ...prev,
-                      isOpen: true,
-                      success: false,
-                      error: null,
-                      gameName: projectTitle || 'My Game',
-                      message: savedGamePrompt,
-                    }));
-                  }}
-                  className="p-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-md transition-colors shrink-0"
-                  title="Share to Discord"
-                >
-                  <DiscordIcon className="w-4 h-4" />
-                </button>
+              {activeTab === 'preview' && (
+                <>
+                  <div className="flex bg-zinc-900 rounded-md p-1 border border-zinc-800 shrink-0">
+                    <button
+                      onClick={() => setDeviceView('desktop')}
+                      className={`p-1.5 rounded-sm transition-colors ${deviceView === 'desktop' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      title="Desktop View"
+                    >
+                      <Monitor className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setDeviceView('tablet')}
+                      className={`p-1.5 rounded-sm transition-colors ${deviceView === 'tablet' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      title="Tablet View"
+                    >
+                      <Tablet className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setDeviceView('mobile')}
+                      className={`p-1.5 rounded-sm transition-colors ${deviceView === 'mobile' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      title="Mobile View"
+                    >
+                      <Smartphone className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="block w-px h-6 bg-zinc-800 mx-1 shrink-0"></div>
+                  <button 
+                    onClick={handleRefreshIframe}
+                    className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
+                    title="Restart Game"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleFullscreen}
+                    className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors shrink-0"
+                    title="Fullscreen"
+                  >
+                    <Maximize className="w-4 h-4" />
+                  </button>
+                </>
               )}
-              <button 
-                onClick={() => canDownloadZip ? handleDownloadZip() : alert('Download ZIP is available on Creator, Pro, and Studio tiers.')}
-                className={`p-2 rounded-md transition-colors shrink-0 ${canDownloadZip ? 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800' : 'text-zinc-600 cursor-not-allowed'}`}
-                title={canDownloadZip ? "Download ZIP" : "Download ZIP (Upgrade Required)"}
-              >
-                <Download className="w-4 h-4" />
-              </button>
+              {activeTab === 'code' && (
+                <>
+                  <button
+                    onClick={() => canGithubSync
+                      ? setGithubSyncConfig(prev => ({ ...prev, isOpen: true }))
+                      : alert('GitHub Sync is available on Creator, Pro, and Studio tiers.')}
+                    className={`p-2 rounded-md transition-colors shrink-0 ${canGithubSync ? 'text-zinc-400 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10' : 'text-zinc-600 cursor-not-allowed'}`}
+                    title={canGithubSync ? 'Sync to GitHub' : 'GitHub Sync (Upgrade Required)'}
+                  >
+                    <Github className="w-4 h-4" />
+                  </button>
+                  {userProfile?.discordWebhookUrl && (
+                    <button
+                      onClick={() => {
+                        setDiscordShare(prev => ({
+                          ...prev,
+                          isOpen: true,
+                          success: false,
+                          error: null,
+                          gameName: projectTitle || 'My Game',
+                          message: savedGamePrompt,
+                        }));
+                      }}
+                      className="p-2 text-zinc-400 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10 rounded-md transition-colors shrink-0"
+                      title="Share to Discord"
+                    >
+                      <DiscordIcon className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => canDownloadZip ? handleDownloadZip() : alert('Download ZIP is available on Creator, Pro, and Studio tiers.')}
+                    className={`p-2 rounded-md transition-colors shrink-0 ${canDownloadZip ? 'text-zinc-400 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10' : 'text-zinc-600 cursor-not-allowed'}`}
+                    title={canDownloadZip ? "Download ZIP" : "Download ZIP (Upgrade Required)"}
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1854,10 +1860,10 @@ setFileDiffs(diffs);
           
           {isGenerating && !files && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#050505] z-20">
-              <div className="w-full max-w-md p-8 glass-panel rounded-2xl border border-emerald-500/20 shadow-[0_0_50px_rgba(16,185,129,0.1)]">
+              <div className="w-full max-w-md p-8 glass-panel rounded-2xl border border-[#FF00C0]/20 shadow-[0_0_50px_rgba(255,0,192,0.1)]">
                 <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/30">
-                    <Terminal className="w-6 h-6 text-emerald-400 animate-pulse" />
+                  <div className="w-12 h-12 rounded-xl bg-[#FF00C0]/10 flex items-center justify-center border border-[#FF00C0]/30">
+                    <Terminal className="w-6 h-6 text-[#FF00C0] animate-pulse" />
                   </div>
                   <div>
                     <h3 className="text-lg font-display font-bold text-white">Compiling Reality</h3>
@@ -1869,18 +1875,18 @@ setFileDiffs(diffs);
                   {terminalSteps.map((step, idx) => (
                     <div 
                       key={idx} 
-                      className={`flex items-center gap-2 transition-all duration-300 ${idx === terminalStep ? 'text-emerald-400 opacity-100' : idx < terminalStep ? 'text-zinc-500 opacity-50' : 'opacity-0 hidden'}`}
+                      className={`flex items-center gap-2 transition-all duration-300 ${idx === terminalStep ? 'text-[#FF00C0] opacity-100' : idx < terminalStep ? 'text-zinc-500 opacity-50' : 'opacity-0 hidden'}`}
                     >
                       <span className="shrink-0">{idx < terminalStep ? '✓' : '>'}</span>
                       <span>{step}</span>
-                      {idx === terminalStep && <span className="w-1.5 h-3 bg-emerald-400 animate-pulse inline-block ml-1" />}
+                      {idx === terminalStep && <span className="w-1.5 h-3 bg-[#FF00C0] animate-pulse inline-block ml-1" />}
                     </div>
                   ))}
                 </div>
                 
                 <div className="mt-8 h-1 w-full bg-zinc-900 rounded-full overflow-hidden">
                   <motion.div 
-                    className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500"
+                    className="h-full bg-gradient-to-r from-[#FF00C0] to-[#00AFFF]"
                     initial={{ width: "0%" }}
                     animate={{ width: `${((terminalStep + 1) / terminalSteps.length) * 100}%` }}
                     transition={{ duration: 0.5 }}
@@ -1993,15 +1999,15 @@ setFileDiffs(diffs);
                       href="https://gamebot.studio"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium z-50 flex items-center gap-2 border border-white/10 shadow-xl hover:bg-zinc-900/90 hover:border-white/20 transition-all cursor-pointer"
+                      className="absolute bottom-4 right-4 bg-zinc-950/90 backdrop-blur-md text-white/95 px-3 py-2 rounded-xl text-xs font-semibold z-50 flex items-center gap-2 border border-[#FF00C0]/50 shadow-[0_0_15px_rgba(255,0,192,0.4)] hover:shadow-[0_0_25px_rgba(255,0,192,0.6)] hover:bg-zinc-900 transition-all cursor-pointer"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <Sparkles className="w-4 h-4 text-[#FF00C0]" />
                       Created with Game Bot
                     </a>
                   )}
                 </div>
               ) : deviceView === 'tablet' ? (
-                <div className="h-[90%] max-h-full relative rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.6)]" style={{ aspectRatio: '3/4' }}>
+                <div className="h-[90%] max-h-full relative rounded-2xl overflow-hidden border-2 border-zinc-700 shadow-[0_0_40px_rgba(0,0,0,0.8),0_0_0_1px_rgba(255,0,192,0.15)]" style={{ aspectRatio: '3/4' }}>
                   <iframe
                     key={files ? Object.entries(files).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+':'+v.length).join('|') : 'empty'}
                     ref={iframeRef}
@@ -2017,9 +2023,9 @@ setFileDiffs(diffs);
                       href="https://gamebot.studio"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium z-50 flex items-center gap-2 border border-white/10 shadow-xl hover:bg-zinc-900/90 hover:border-white/20 transition-all cursor-pointer"
+                      className="absolute bottom-4 right-4 bg-zinc-950/90 backdrop-blur-md text-white/95 px-3 py-2 rounded-xl text-xs font-semibold z-50 flex items-center gap-2 border border-[#FF00C0]/50 shadow-[0_0_15px_rgba(255,0,192,0.4)] hover:shadow-[0_0_25px_rgba(255,0,192,0.6)] hover:bg-zinc-900 transition-all cursor-pointer"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <Sparkles className="w-4 h-4 text-[#FF00C0]" />
                       Created with Game Bot
                     </a>
                   )}
@@ -2041,9 +2047,9 @@ setFileDiffs(diffs);
                       href="https://gamebot.studio"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="absolute bottom-4 right-4 bg-zinc-950/80 backdrop-blur-md text-white/90 px-3 py-2 rounded-lg text-xs font-medium z-50 flex items-center gap-2 border border-white/10 shadow-xl hover:bg-zinc-900/90 hover:border-white/20 transition-all cursor-pointer"
+                      className="absolute bottom-4 right-4 bg-zinc-950/90 backdrop-blur-md text-white/95 px-3 py-2 rounded-xl text-xs font-semibold z-50 flex items-center gap-2 border border-[#FF00C0]/50 shadow-[0_0_15px_rgba(255,0,192,0.4)] hover:shadow-[0_0_25px_rgba(255,0,192,0.6)] hover:bg-zinc-900 transition-all cursor-pointer"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <Sparkles className="w-4 h-4 text-[#FF00C0]" />
                       Created with Game Bot
                     </a>
                   )}
@@ -2083,7 +2089,7 @@ setFileDiffs(diffs);
                       <div className="flex items-center gap-2">
                         {/* Auto-save indicator */}
                         {savedIndicator && (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full transition-all">
+                          <span className="flex items-center gap-1 text-[10px] text-[#FF00C0] bg-[#FF00C0]/10 border border-[#FF00C0]/20 px-2 py-0.5 rounded-full transition-all">
                             <CheckCircle2 className="w-3 h-3" /> Saved
                           </span>
                         )}
@@ -2095,11 +2101,11 @@ setFileDiffs(diffs);
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDownloadFile(selectedFile)}
+                          onClick={() => editorRef.current?.getAction('actions.find')?.run()}
                           className="p-1.5 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-md transition-colors"
-                          title="Download File"
+                          title="Find Text (Ctrl+F)"
                         >
-                          <Download className="w-3.5 h-3.5" />
+                          <Search className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -2278,7 +2284,7 @@ setFileDiffs(diffs);
 
             {discordShare.success ? (
               <div className="text-center py-6">
-                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+                <CheckCircle2 className="w-12 h-12 text-[#FF00C0] mx-auto mb-3" />
                 <p className="text-white font-semibold mb-1">Posted to Discord!</p>
                 <p className="text-zinc-400 text-sm mb-6">Your game has been shared to the connected channel.</p>
                 <button
@@ -2567,7 +2573,7 @@ setFileDiffs(diffs);
                     autoFocus
                     name="value"
                     defaultValue={dialogConfig.initialValue}
-                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-[#00AFFF]/50 focus:ring-1 focus:ring-[#00AFFF]/50 transition-all font-mono"
                     placeholder={dialogConfig.type.startsWith('rename') ? 'name.ext' : 'path/to/file.ext'}
                   />
                 </div>
@@ -2581,7 +2587,7 @@ setFileDiffs(diffs);
                   </button>
                   <button 
                     type="submit"
-                    className="flex-1 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors border border-emerald-500/20"
+                    className="flex-1 py-2 bg-[#00AFFF]/20 hover:bg-[#00AFFF]/30 text-[#00AFFF] rounded-lg text-sm font-medium transition-colors border border-[#00AFFF]/20"
                   >
                     {dialogConfig.type.startsWith('rename') ? 'Rename' : 'Move'}
                   </button>
@@ -2602,7 +2608,7 @@ setFileDiffs(diffs);
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
               <div className="flex items-center gap-2">
-                <Wand2 className="w-4 h-4 text-emerald-400" />
+                <Wand2 className="w-4 h-4 text-[#FF00C0]" />
                 <span className="text-sm font-semibold text-zinc-100">Enhance your idea</span>
               </div>
               <button
@@ -2622,7 +2628,7 @@ setFileDiffs(diffs);
             {/* Loading state */}
             {enhanceModal === 'loading' && (
               <div className="flex flex-col items-center gap-3 py-12 px-6">
-                <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+                <Loader2 className="w-6 h-6 text-[#FF00C0] animate-spin" />
                 <p className="text-sm text-zinc-400">Thinking about your game...</p>
               </div>
             )}
@@ -2634,14 +2640,14 @@ setFileDiffs(diffs);
                 {enhanceQuestions.map((q, i) => (
                   <div key={q.id} className="space-y-1.5">
                     <label className="text-sm font-medium text-zinc-200">
-                      <span className="text-emerald-500 mr-1.5">{i + 1}.</span>{q.question}
+                      <span className="text-[#FF00C0] mr-1.5">{i + 1}.</span>{q.question}
                     </label>
                     <input
                       type="text"
                       value={enhanceAnswers[q.id] || ''}
                       onChange={e => setEnhanceAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                       placeholder={q.placeholder}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-[#00AFFF]/60 focus:ring-1 focus:ring-[#00AFFF]/30 transition-colors"
                     />
                   </div>
                 ))}
@@ -2654,7 +2660,7 @@ setFileDiffs(diffs);
                   </button>
                   <button
                     onClick={handleEnhanceFinalize}
-                    className="flex-1 py-2 text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-xl transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 py-2 text-sm font-semibold bg-[#FF00C0] hover:opacity-90 text-white rounded-xl transition-colors flex items-center justify-center gap-2"
                   >
                     <Wand2 className="w-3.5 h-3.5" />
                     Enhance Prompt
@@ -2666,7 +2672,7 @@ setFileDiffs(diffs);
             {/* Finalizing state */}
             {enhanceModal === 'finalizing' && (
               <div className="flex flex-col items-center gap-3 py-12 px-6">
-                <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+                <Loader2 className="w-6 h-6 text-[#FF00C0] animate-spin" />
                 <p className="text-sm text-zinc-400">Writing your enhanced prompt...</p>
               </div>
             )}

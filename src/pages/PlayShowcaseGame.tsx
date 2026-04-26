@@ -126,7 +126,7 @@ export default function PlayShowcaseGame() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
-        <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
+        <Loader2 className="w-10 h-10 text-[#FF00C0] animate-spin" />
       </div>
     );
   }
@@ -136,11 +136,11 @@ export default function PlayShowcaseGame() {
       <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center px-4 text-center">
         <h1 className="text-4xl font-display font-bold mb-4">Game Not Found</h1>
         <p className="text-zinc-400 mb-8">This game might be private, deleted, or the link is invalid.</p>
-        <button 
-          onClick={() => navigate('/showcase')} 
+        <button
+          onClick={() => navigate('/explore')}
           className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors"
         >
-          Return to Showcase
+          Return to Explore
         </button>
       </div>
     );
@@ -149,19 +149,19 @@ export default function PlayShowcaseGame() {
   return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden">
       <div className="absolute inset-0 bg-grid-pattern opacity-[0.03] pointer-events-none" />
-      
+
       {/* Header */}
-      <header className="h-16 border-b border-white/5 flex items-center justify-between px-4 sm:px-6 bg-zinc-950/80 backdrop-blur-md z-40">
-        <button 
-          onClick={() => navigate('/showcase')}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
+      <header className="h-16 border-b border-white/5 flex items-center justify-between px-4 sm:px-6 bg-[#05050A]/90 backdrop-blur-md z-40">
+        <button
+          onClick={() => navigate('/explore')}
+          className="flex items-center gap-2 text-zinc-400 hover:text-[#FF00C0] transition-colors group"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-5 h-5 group-hover:text-[#FF00C0] transition-colors" />
           <span className="hidden sm:inline font-medium">Showcase</span>
         </button>
-        
+
         <div className="flex-1 min-w-0 px-4 text-center">
-          <h1 className="font-display font-bold text-sm sm:text-base text-zinc-100 truncate max-w-md mx-auto">
+          <h1 className="font-display font-bold text-sm sm:text-base truncate max-w-md mx-auto text-transparent bg-clip-text bg-gradient-to-r from-[#FF00C0] to-[#00AFFF]">
             {game.title || `Game by ${creatorName}`}
           </h1>
           <p className="text-xs text-zinc-500 truncate">
@@ -176,8 +176,8 @@ export default function PlayShowcaseGame() {
             title="Play with a friend online"
             className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
               mpActive
-                ? 'bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-300'
-                : 'bg-fuchsia-500/10 border-fuchsia-500/25 text-fuchsia-400 hover:bg-fuchsia-500/20 hover:border-fuchsia-500/40'
+                ? 'bg-[#FF00C0]/20 border-[#FF00C0]/50 text-[#FF00C0]'
+                : 'bg-[#FF00C0]/10 border-[#FF00C0]/25 text-[#FF00C0] hover:bg-[#FF00C0]/20 hover:border-[#FF00C0]/50'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
@@ -188,7 +188,7 @@ export default function PlayShowcaseGame() {
             <button
               onClick={() => navigate('/app', { state: { loadGame: game, isSpinOff: true } })}
               title="Spin Off — fork this game and improve it"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-all"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#00AFFF]/25 bg-[#00AFFF]/10 text-[#00AFFF] text-xs font-semibold hover:bg-[#00AFFF]/20 hover:border-[#00AFFF]/50 transition-all"
             >
               <GitFork className="w-3.5 h-3.5" />
               Spin Off
@@ -196,19 +196,19 @@ export default function PlayShowcaseGame() {
           )}
           <button
             onClick={handleShare}
-            className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors relative"
+            className="p-2 text-zinc-400 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10 rounded-lg transition-colors relative"
             title="Share Game"
           >
             <Share2 className="w-5 h-5" />
             {copied && (
-              <span className="absolute -bottom-8 right-0 bg-emerald-500 text-zinc-950 text-xs font-bold px-2 py-1 rounded-md shadow-lg">
+              <span className="absolute -bottom-8 right-0 bg-[#FF00C0] text-white text-xs font-bold px-2 py-1 rounded-md shadow-lg whitespace-nowrap">
                 Copied!
               </span>
             )}
           </button>
           <button
             onClick={handleFullscreen}
-            className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 text-zinc-400 hover:text-[#FF00C0] hover:bg-[#FF00C0]/10 rounded-lg transition-colors"
             title="Toggle Fullscreen"
           >
             {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}

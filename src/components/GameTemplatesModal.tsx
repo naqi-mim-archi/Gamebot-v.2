@@ -142,16 +142,16 @@ const TEMPLATES: Template[] = [
 ];
 
 const TAG_COLORS: Record<string, string> = {
-  '2D': 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
-  '3D': 'bg-violet-500/15 text-violet-400 border-violet-500/20',
-  Action: 'bg-red-500/15 text-red-400 border-red-500/20',
-  Arcade: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20',
-  Puzzle: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/20',
-  Strategy: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
-  RPG: 'bg-pink-500/15 text-pink-400 border-pink-500/20',
-  Casual: 'bg-lime-500/15 text-lime-400 border-lime-500/20',
-  Classic: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20',
-  Multiplayer: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/20',
+  '2D': 'bg-[#FF00C0]/15 text-[#FF00C0] border-[#FF00C0]/25',
+  '3D': 'bg-[#FF00C0]/15 text-[#FF00C0] border-[#FF00C0]/25',
+  Action: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
+  Arcade: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
+  Puzzle: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
+  Strategy: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
+  RPG: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
+  Casual: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
+  Classic: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
+  Multiplayer: 'bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25',
 };
 
 function getChips(hint: string): string[] {
@@ -189,7 +189,7 @@ function TemplateCard({ t, onPreview }: { t: Template; onPreview: (t: Template) 
     <button
       ref={cardRef}
       onClick={() => onPreview(t)}
-      className="group text-left bg-zinc-900/60 hover:bg-zinc-800/80 border border-white/5 hover:border-white/15 rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus:border-emerald-500/40"
+      className="group text-left bg-zinc-900/60 hover:bg-zinc-800/80 border border-white/5 hover:border-white/15 rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus:border-[#FF00C0]/40"
     >
       <div className="w-full relative bg-zinc-950" style={{ height: '140px' }}>
         {visible ? (
@@ -236,6 +236,11 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
   const [selectedChips, setSelectedChips] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   const filtered = TEMPLATES.filter(t =>
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.tags.some(g => g.toLowerCase().includes(search.toLowerCase()))
@@ -292,7 +297,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 z-[9999] flex items-center justify-center pt-[88px] pb-4 px-4"
         style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
         onClick={onClose}
       >
@@ -301,11 +306,18 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="bg-zinc-950 border border-white/10 rounded-3xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl"
+          className="bg-[#0A0A10] border border-white/10 rounded-3xl w-full max-w-3xl flex flex-col overflow-hidden shadow-2xl relative"
+          style={{ maxHeight: 'calc(100vh - 108px)' }}
           onClick={e => e.stopPropagation()}
         >
+          {/* Ambient corner glows */}
+          <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+            <div className="absolute -top-32 -left-32 w-80 h-80 bg-[#FF00C0]/15 blur-[100px] rounded-full" />
+            <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#00AFFF]/15 blur-[100px] rounded-full" />
+          </div>
+
           {/* Header */}
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-white/5 shrink-0 relative z-10">
             {selected ? (
               <button
                 onClick={handleBack}
@@ -314,10 +326,18 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                 <ArrowLeft className="w-4 h-4" />
               </button>
             ) : (
-              <LayoutTemplate className="w-5 h-5 text-emerald-400" />
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#FF00C0] to-[#00AFFF] flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(255,0,192,0.3)]">
+                <LayoutTemplate className="w-3.5 h-3.5 text-white" />
+              </div>
             )}
-            <h2 className="text-base font-bold text-white font-display flex-1">
-              {selected ? selected.name : 'Choose a Template'}
+            <h2 className="text-base font-bold font-display flex-1">
+              {selected ? (
+                <span className="text-white">{selected.name}</span>
+              ) : (
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#FF00C0] via-[#A855F7] to-[#00AFFF]">
+                  Choose a Template
+                </span>
+              )}
             </h2>
             {!selected && (
               <div className="relative flex-1 max-w-xs">
@@ -327,7 +347,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                   placeholder="Search templates..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FF00C0]/50 transition-colors"
                   autoFocus
                 />
               </div>
@@ -341,7 +361,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
           </div>
 
           {/* Body — animated switch between grid and customize */}
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence mode="wait" initial={false} >
             {selected ? (
               /* ── CUSTOMIZE STEP ── */
               <motion.div
@@ -350,7 +370,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 32 }}
                 transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-5"
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 flex flex-col gap-5 relative z-10"
               >
                 {/* Template preview card */}
                 <div className="flex gap-4 bg-white/[0.04] border border-white/8 rounded-2xl overflow-hidden">
@@ -390,7 +410,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                     onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleStart(); }}
                     placeholder={selected.hint}
                     rows={3}
-                    className="w-full bg-white/[0.04] border border-white/10 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/15 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 resize-none outline-none transition-all leading-relaxed"
+                    className="w-full bg-white/[0.04] border border-white/10 focus:border-[#FF00C0]/60 focus:ring-2 focus:ring-[#FF00C0]/15 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 resize-none outline-none transition-all leading-relaxed"
                   />
                   <p className="text-[11px] text-zinc-600 mt-1.5">Tip: leave blank to use the starter game as-is, or type what you want to change.</p>
                 </div>
@@ -408,12 +428,12 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                           onClick={() => toggleChip(chip)}
                           className={`px-3 py-1.5 rounded-full text-xs border transition-all duration-150 flex items-center gap-1.5 ${
                             checked
-                              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                              ? 'bg-[#FF00C0]/20 border-[#FF00C0]/50 text-[#FF00C0]'
                               : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border-white/8 hover:border-white/20'
                           }`}
                         >
                           <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
-                            checked ? 'bg-emerald-500 border-emerald-400' : 'bg-transparent border-zinc-600'
+                            checked ? 'bg-[#FF00C0] border-[#FF00C0]' : 'bg-transparent border-zinc-600'
                           }`}>
                             {checked && (
                               <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 10" fill="none">
@@ -432,7 +452,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                 <button
                   onClick={handleStart}
                   disabled={loading}
-                  className="w-full py-3.5 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-60 disabled:cursor-not-allowed text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/30 hover:shadow-emerald-800/40 mt-auto"
+                  className="w-full py-3.5 rounded-xl font-semibold text-sm bg-gradient-to-r from-[#FF00C0] to-[#00AFFF] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-[#FF00C0]/20 mt-auto"
                 >
                   {loading ? (
                     <>
@@ -456,7 +476,7 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -32 }}
                 transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="flex-1 min-h-0 overflow-y-auto p-6 grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-max"
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-max relative z-10"
               >
                 {filtered.map(t => (
                   <TemplateCard key={t.id} t={t} onPreview={handlePreview} />
@@ -466,13 +486,13 @@ export default function GameTemplatesModal({ onSelect, onClose, hasSteam, onStea
                 {hasSteam && (
                   <button
                     onClick={() => { onClose(); onSteamLibrary?.(); }}
-                    className="group text-left bg-gradient-to-br from-sky-950/60 to-zinc-900/60 hover:from-sky-900/60 hover:to-zinc-800/60 border border-sky-500/15 hover:border-sky-500/30 rounded-2xl p-4 transition-all duration-200 hover:-translate-y-0.5 focus:outline-none"
+                    className="group text-left bg-white/[0.03] hover:bg-white/[0.06] border border-[#00AFFF]/15 hover:border-[#00AFFF]/30 rounded-2xl p-4 transition-all duration-200 hover:-translate-y-0.5 focus:outline-none"
                   >
                     <div className="text-2xl mb-2">🎮</div>
                     <p className="text-sm font-semibold text-white mb-0.5">Steam Library</p>
                     <p className="text-[11px] text-zinc-500 mb-2 leading-relaxed">Pick a game from your Steam library as inspiration</p>
                     <div className="flex flex-wrap gap-1">
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-medium border bg-sky-500/15 text-sky-400 border-sky-500/20">Steam</span>
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-medium border bg-[#00AFFF]/15 text-[#00AFFF] border-[#00AFFF]/25">Steam</span>
                     </div>
                   </button>
                 )}

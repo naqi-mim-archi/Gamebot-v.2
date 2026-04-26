@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+
+// ── Scroll to top on every route change ────────────────────────────────────────
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }, [pathname]);
+  return null;
+}
 import { HelmetProvider } from 'react-helmet-async';
 
 import MainApp from './MainApp';
@@ -16,7 +23,11 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import UserProfilePage from './pages/UserProfile';
 import Tutorials from './pages/Tutorials';
-import AdminDashboard from './pages/AdminDashboard'; // <-- MOVED TO TOP
+import AdminDashboard from './pages/AdminDashboard'; 
+import TermsConditions from './pages/TermsConditions';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import AllCreators from './pages/AllCreators';
+import TrendingGames from './pages/TrendingGames';
 
 import { auth } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -29,7 +40,7 @@ const ADMIN_EMAILS = ['tests@mim.archis'];
 
 function AppRoutes() {
   const [user, setUser] = useState<any>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const[userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const navigate = useNavigate();
@@ -39,7 +50,7 @@ function AppRoutes() {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
     if (ref) localStorage.setItem('gb_referral', ref);
-  }, []);
+  },[]);
 
   useEffect(() => {
     let unsubscribeProfile: () => void;
@@ -76,7 +87,7 @@ function AppRoutes() {
       unsubscribeAuth();
       if (unsubscribeProfile) unsubscribeProfile();
     };
-  }, []);
+  },[]);
 
   const handleLogout = async () => {
     try {
@@ -87,25 +98,40 @@ function AppRoutes() {
     }
   };
 
+  // ✅ THIS IS THE FIXED LOADER EXACTLY LIKE DASHBOARD
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#05050A] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-[#FF00C0]/30 border-t-[#FF00C0] rounded-full animate-spin shadow-[0_0_15px_rgba(255,0,192,0.5)]" />
       </div>
     );
   }
 
   return (
     <>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<Home user={user} userProfile={userProfile} onSignIn={() => setShowAuthModal(true)} />} />
-        <Route path="/create" element={<Home user={user} userProfile={userProfile} onSignIn={() => setShowAuthModal(true)} />} />
-        <Route path="/showcase" element={<Showcase user={user} />} />
+        <Route path="/explore" element={<Showcase user={user} userProfile={userProfile} onLogout={handleLogout} />} />
+        <Route path="/creators" element={<AllCreators user={user} userProfile={userProfile} onLogout={handleLogout} />} />
+        <Route path="/trending" element={<TrendingGames user={user} userProfile={userProfile} onLogout={handleLogout} />} />
         <Route path="/play/:id" element={<PlayShowcaseGame />} />
-        <Route path="/profile/:uid" element={<UserProfilePage user={user} />} />
-        <Route path="/tutorials" element={<Tutorials user={user} />} />
+        <Route path="/profile/:uid"  element={<UserProfilePage user={user} userProfile={userProfile} onLogout={handleLogout} /> } />
+        <Route 
+        path="/tutorials" 
+        element={<Tutorials user={user} userProfile={userProfile} onLogout={handleLogout} />} 
+        />
         <Route path="/about" element={<About user={user} />} />
-        <Route path="/contact" element={<Contact user={user} />} />
+        {/* ✅ Pass the exact same props to Contact */}
+<Route 
+  path="/contact" 
+  element={<Contact user={user} userProfile={userProfile} onLogout={handleLogout} />} 
+/>
+        
+        {/* FIXED ROUTES: Pointing to their actual components */}
+        <Route path="/terms" element={<TermsConditions user={user} userProfile={userProfile} onLogout={handleLogout} />} />
+        <Route path="/privacy" element={<PrivacyPolicy user={user} userProfile={userProfile} onLogout={handleLogout} />} />
+        
         <Route path="/app" element={
           <MainAppWrapper 
             user={user} 
