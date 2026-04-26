@@ -98,9 +98,9 @@ export default function Navbar({ user, userProfile, onSignIn, onSignOut, onLogou
           <Link to="/" onClick={handleGoHome} className="flex items-center">
             {/* Increased Logo Size */}
             <img
-              src="/g_logo2.svg"
+              src="/g_icon.svg"
               alt="GameBot Studio"
-              className="h-10 md:h-12 w-auto object-contain shrink-0"
+              className="h-9 w-9 object-contain shrink-0"
             />
           </Link>
 
@@ -293,9 +293,9 @@ export default function Navbar({ user, userProfile, onSignIn, onSignOut, onLogou
             <div className="px-6 py-8 flex flex-col gap-6">
               <Link to="/" onClick={handleGoHome} className="w-fit">
                 <img
-                  src="/g_logo2.svg"
+                  src="/g_icon.svg"
                   alt="GameBot Studio"
-                  className="h-12 w-auto object-contain"
+                  className="h-9 w-9 object-contain"
                 />
               </Link>
 

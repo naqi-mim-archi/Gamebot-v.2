@@ -20,10 +20,10 @@ export default function Footer() {
           {/* Brand & CTA */}
           <div className="col-span-1 md:col-span-2">
             <Link to="/" className="inline-block mb-6">
-              <img 
-                src="/g_logo2.svg" 
-                alt="GameBot Studio" 
-                className="h-20 w-40 object-contain" 
+              <img
+                src="/g_icon.svg"
+                alt="GameBot Studio"
+                className="h-12 w-12 object-contain"
               />
             </Link>
             <p className="text-[#B3B6CB] text-[14px] leading-relaxed mb-8 max-w-[320px]">
