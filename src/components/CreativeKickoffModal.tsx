@@ -329,12 +329,6 @@ export default function CreativeKickoffModal({ prompt, title: initialTitle = '',
         {/* Footer */}
         <div className="flex items-center justify-end gap-4 px-6 py-5 shrink-0 z-10 relative border-t border-white/5">
           <button
-            onClick={onCancel}
-            className="px-6 py-3 text-[13px] font-medium text-zinc-300 hover:text-white bg-[#12121A] hover:bg-white/5 rounded-full transition-all border border-white/5"
-          >
-            Keep iterating
-          </button>
-          <button
             onClick={handleConfirm}
             disabled={loading}
             className="px-7 py-3 bg-gradient-to-r from-[#FF00C0] to-[#00AFFF] hover:opacity-90 text-zinc-950 rounded-full font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-[14px] shadow-[0_0_20px_rgba(255,0,192,0.3)]"

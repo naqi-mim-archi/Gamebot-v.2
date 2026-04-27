@@ -128,6 +128,19 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const videoSectionRef = useRef<HTMLDivElement>(null);
+
+  // Autoplay video when scrolled into view
+  useEffect(() => {
+    const el = videoSectionRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setIsVideoPlaying(true); },
+      { threshold: 0.4 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   // Promo code state
   const [promoInput, setPromoInput] = useState('');
@@ -467,6 +480,7 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
 
         {/* "Your idea + one prompt" Banner Section */}
         <motion.div
+          ref={videoSectionRef}
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8, duration: 0.8 }}

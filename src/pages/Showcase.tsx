@@ -546,10 +546,9 @@ export default function Showcase({ user, userProfile, onLogout }: ShowcaseProps)
 
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
                 {[...CATEGORIES].sort((a, b) => {
-                  const aHas = games.some(g => g.displayCategory === a.id);
-                  const bHas = games.some(g => g.displayCategory === b.id);
-                  if (aHas === bHas) return 0;
-                  return aHas ? -1 : 1;
+                  const aCount = games.filter(g => g.displayCategory === a.id).length;
+                  const bCount = games.filter(g => g.displayCategory === b.id).length;
+                  return bCount - aCount;
                 }).map(cat => {
                   const Icon = cat.icon;
                   const isActive = activeCategory === cat.id;

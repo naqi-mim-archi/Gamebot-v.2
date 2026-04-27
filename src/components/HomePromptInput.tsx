@@ -39,6 +39,7 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
   const [modeOpen, setModeOpen] = useState(false);
   const [modeError, setModeError] = useState('');
   const pendingSubmitRef = useRef(false);
+  const alreadyEnhancedRef = useRef(false); // tracks if current prompt was already enhanced
 
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +105,7 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
       enhanceQuestions.forEach(q => { if (enhanceAnswers[q.id]) map[q.question] = enhanceAnswers[q.id]; });
       const enhanced = await finalizeEnhancedPrompt(prompt, map);
       setPrompt(enhanced);
+      alreadyEnhancedRef.current = true;
       setEnhanceModal('closed');
       if (pendingSubmitRef.current) {
         pendingSubmitRef.current = false;
@@ -124,8 +126,8 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
       setTimeout(() => setModeError(''), 4000);
       return;
     }
-    // In Detailed mode with a real prompt → auto-open Enhance first, then navigate after
-    if (generationMode === 'detailed' && prompt.trim()) {
+    // In Detailed mode with a real prompt → auto-open Enhance first (unless already enhanced)
+    if (generationMode === 'detailed' && prompt.trim() && !alreadyEnhancedRef.current) {
       pendingSubmitRef.current = true;
       handleEnhancePrompt();
       return;
@@ -176,7 +178,7 @@ export default function HomePromptInput({ userProfile }: { userProfile?: any }) 
             <Sparkles className="w-5 h-5 text-zinc-500 mt-1.5 shrink-0" />
             <textarea
               value={prompt}
-              onChange={e => setPrompt(e.target.value)}
+              onChange={e => { setPrompt(e.target.value); alreadyEnhancedRef.current = false; }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
               placeholder="Describe a game to build..."
               className="flex-1 min-w-0 bg-transparent border-none outline-none text-white placeholder-zinc-500 resize-none text-[17px] leading-relaxed overflow-y-auto font-[inherit]"

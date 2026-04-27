@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { X, BookOpen, Heart, User, ChevronRight, Loader2, Youtube, Trash2 } from 'lucide-react';
+import { X, BookOpen, Heart, User, ChevronRight, Loader2, Youtube, Trash2, Clock, CheckCircle2 } from 'lucide-react';
 import { Tutorial, createTutorial, deleteTutorial } from '../services/db';
 
 const TAG_OPTIONS = ['beginner', 'platformer', 'shooter', 'puzzle', 'rpg', 'multiplayer', 'advanced', 'tips'];
@@ -66,6 +66,7 @@ export default function TutorialModal({ user, mode, tutorial, onClose, onCreated
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'approved' | 'pending'>('idle');
 
   function toggleTag(tag: string) {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
@@ -91,9 +92,14 @@ export default function TutorialModal({ user, mode, tutorial, onClose, onCreated
         ...(user.photoURL ? { authorPhoto: user.photoURL } : {}),
         tags: selectedTags,
       };
-      const id = await createTutorial(data);
-      const newTutorial: Tutorial = { ...data, id, likes: 0, createdAt: null };
-      onCreated?.(newTutorial);
+      const { id, status } = await createTutorial(data);
+      if (status === 'approved') {
+        const newTutorial: Tutorial = { ...data, id, likes: 0, createdAt: null, status: 'approved' };
+        onCreated?.(newTutorial);
+        setSubmitStatus('approved');
+      } else {
+        setSubmitStatus('pending');
+      }
     } catch (e: any) {
       setError(e.message || 'Failed to save. Please try again.');
     } finally {
@@ -167,7 +173,33 @@ export default function TutorialModal({ user, mode, tutorial, onClose, onCreated
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto min-h-0">
-          {mode === 'create' ? (
+          {submitStatus === 'pending' ? (
+            <div className="p-10 flex flex-col items-center justify-center text-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                <Clock className="w-8 h-8 text-amber-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Submitted for Review</h3>
+              <p className="text-zinc-400 text-sm max-w-xs leading-relaxed">
+                Your tutorial is under review by our team. We'll approve it shortly. Thanks for contributing!
+              </p>
+              <button onClick={onClose} className="mt-2 px-6 py-2.5 bg-white/10 hover:bg-white/15 text-white font-bold text-sm rounded-xl transition-colors">
+                Close
+              </button>
+            </div>
+          ) : submitStatus === 'approved' ? (
+            <div className="p-10 flex flex-col items-center justify-center text-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Tutorial Published!</h3>
+              <p className="text-zinc-400 text-sm max-w-xs leading-relaxed">
+                Your tutorial passed our quality check and is now live for the community.
+              </p>
+              <button onClick={onClose} className="mt-2 px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm rounded-xl transition-colors">
+                Done
+              </button>
+            </div>
+          ) : mode === 'create' ? (
             <div className="p-6 flex flex-col gap-5">
               {/* Title */}
               <div>
@@ -295,9 +327,9 @@ export default function TutorialModal({ user, mode, tutorial, onClose, onCreated
         </div>
 
         {/* Footer */}
-        {mode === 'create' && (
+        {mode === 'create' && submitStatus === 'idle' && (
           <div className="px-6 py-4 border-t border-white/5 flex items-center justify-between shrink-0 bg-zinc-950">
-            <p className="text-xs text-zinc-600">Your tutorial will be visible to the whole community</p>
+            <p className="text-xs text-zinc-600">Tutorial will be reviewed before going live</p>
             <div className="flex gap-3">
               <button
                 onClick={onClose}

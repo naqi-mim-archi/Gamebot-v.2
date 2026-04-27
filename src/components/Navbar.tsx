@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { AuthModalContext } from '../App';
 import { 
   Menu, 
   X, 
@@ -36,6 +37,11 @@ export default function Navbar({ user, userProfile, onSignIn, onSignOut, onLogou
   const[dropdownOpen, setDropdownOpen] = useState(false);
   const location = useLocation();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const authCtx = useContext(AuthModalContext);
+
+  // Always resolve to a working function — prop takes priority, context is fallback
+  const handleSignInFn = onSignIn ?? authCtx.openSignIn;
+  const handleLogoutFn = onLogout ?? onSignOut ?? authCtx.handleLogout;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -64,11 +70,9 @@ export default function Navbar({ user, userProfile, onSignIn, onSignOut, onLogou
   ];
 
   const handleSignIn = (e: React.MouseEvent) => {
-    if (onSignIn) {
-      e.preventDefault();
-      onSignIn();
-      setMobileMenuOpen(false);
-    }
+    e.preventDefault();
+    handleSignInFn();
+    setMobileMenuOpen(false);
   };
 
   const handleGoHome = () => {
@@ -257,8 +261,7 @@ export default function Navbar({ user, userProfile, onSignIn, onSignOut, onLogou
                         <button 
                           onClick={() => {
                             setDropdownOpen(false);
-                            if (onLogout) onLogout();
-                            if (onSignOut) onSignOut();
+                            handleLogoutFn();
                           }} 
                           className="w-full flex items-center gap-3.5 px-5 py-2.5 hover:bg-white/5 text-[14.5px] text-zinc-300 hover:text-[#ff00c8] transition-colors text-left group"
                         >
@@ -383,8 +386,7 @@ export default function Navbar({ user, userProfile, onSignIn, onSignOut, onLogou
                   <button 
                     onClick={() => {
                       setMobileMenuOpen(false);
-                      if (onLogout) onLogout();
-                      if (onSignOut) onSignOut();
+                      handleLogoutFn();
                     }} 
                     className="w-full py-3 text-zinc-400 hover:text-white flex items-center justify-center gap-2 font-medium"
                   >

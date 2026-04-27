@@ -197,14 +197,28 @@ interface HomeProps {
   user?: any;
   userProfile?: any;
   onSignIn?: () => void;
+  onLogout?: () => void;
 }
 
-export default function Home({ user, userProfile, onSignIn }: HomeProps) {
+export default function Home({ user, userProfile, onSignIn, onLogout }: HomeProps) {
   const navigate = useNavigate();
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const videoSectionRef = useRef<HTMLDivElement>(null);
 
   // Always start at the top
   useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }, []);
+
+  // Autoplay video when scrolled into view
+  useEffect(() => {
+    const el = videoSectionRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setIsVideoPlaying(true); },
+      { threshold: 0.4 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
   
   // Showcase Data
   const [games, setGames] = useState<ShowcaseGame[]>([]);
@@ -261,7 +275,7 @@ export default function Home({ user, userProfile, onSignIn }: HomeProps) {
   return (
     <div className="min-h-screen bg-[#05050A] text-white selection:bg-emerald-500/30 font-sora overflow-x-hidden">
       <SEO title="GameBot | Build Games with AI in Seconds" description="Turn ideas into playable reality instantly." />
-      <Navbar user={user} userProfile={userProfile} onLogout={() => {}} />
+      <Navbar user={user} userProfile={userProfile} onSignIn={onSignIn} onLogout={onLogout} />
 
       <main className="pt-32 pb-20 px-6 max-w-[1200px] mx-auto w-full">
 
@@ -297,10 +311,9 @@ export default function Home({ user, userProfile, onSignIn }: HomeProps) {
           
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {[...CATEGORIES].sort((a, b) => {
-              const aHas = games.some(g => g.displayCategory === a.id);
-              const bHas = games.some(g => g.displayCategory === b.id);
-              if (aHas === bHas) return 0;
-              return aHas ? -1 : 1;
+              const aCount = games.filter(g => g.displayCategory === a.id).length;
+              const bCount = games.filter(g => g.displayCategory === b.id).length;
+              return bCount - aCount;
             }).map(cat => {
               const Icon = cat.icon;
               const isActive = activeCategory === cat.id;
@@ -363,6 +376,7 @@ export default function Home({ user, userProfile, onSignIn }: HomeProps) {
 
         {/* ── Promo Video Banner (Exactly as Requested) ─────────────────── */}
         <motion.div
+                 ref={videoSectionRef}
                  initial={{ opacity: 0, y: 30 }}
                  animate={{ opacity: 1, y: 0 }}
                  transition={{ delay: 0.8, duration: 0.8 }}

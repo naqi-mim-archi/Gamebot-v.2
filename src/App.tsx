@@ -1,5 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+
+// ── Global auth modal context ──────────────────────────────────────────────────
+export const AuthModalContext = createContext<{ openSignIn: () => void; handleLogout: () => void }>({
+  openSignIn: () => {},
+  handleLogout: () => {},
+});
 
 // ── Scroll to top on every route change ────────────────────────────────────────
 function ScrollToTop() {
@@ -108,10 +114,10 @@ function AppRoutes() {
   }
 
   return (
-    <>
+    <AuthModalContext.Provider value={{ openSignIn: () => setShowAuthModal(true), handleLogout }}>
       <ScrollToTop />
       <Routes>
-        <Route path="/" element={<Home user={user} userProfile={userProfile} onSignIn={() => setShowAuthModal(true)} />} />
+        <Route path="/" element={<Home user={user} userProfile={userProfile} onSignIn={() => setShowAuthModal(true)} onLogout={handleLogout} />} />
         <Route path="/explore" element={<Showcase user={user} userProfile={userProfile} onLogout={handleLogout} />} />
         <Route path="/creators" element={<AllCreators user={user} userProfile={userProfile} onLogout={handleLogout} />} />
         <Route path="/trending" element={<TrendingGames user={user} userProfile={userProfile} onLogout={handleLogout} />} />
@@ -167,12 +173,12 @@ function AppRoutes() {
       </Routes>
 
       {showAuthModal && (
-        <AuthModal 
-          onClose={() => setShowAuthModal(false)} 
-          onSuccess={() => setShowAuthModal(false)} 
+        <AuthModal
+          onClose={() => setShowAuthModal(false)}
+          onSuccess={() => setShowAuthModal(false)}
         />
       )}
-    </>
+    </AuthModalContext.Provider>
   );
 }
 

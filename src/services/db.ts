@@ -322,15 +322,50 @@ export interface Tutorial {
   id?: string;
   title: string;
   description: string;
-  content: string;           // markdown-like step-by-step body
-  videoUrl?: string;         // YouTube/Vimeo embed (future)
-  gameId?: string;           // linked game (optional)
+  content: string;
+  videoUrl?: string;
+  gameId?: string;
   userId: string;
   authorName: string;
   authorPhoto?: string;
   createdAt: any;
   likes: number;
-  tags: string[];            // e.g. ['platformer', 'beginner']
+  tags: string[];
+  // Moderation fields
+  status?: 'pending' | 'approved' | 'rejected';
+  videoLikes?: number;
+  channelSubscribers?: number;
+  youtubeVideoId?: string;
+  youtubeChannelId?: string;
+  rejectionReason?: string;
+}
+
+// ── YouTube auto-approval thresholds ─────────────────────────────────────────
+const AUTO_APPROVE_MIN_SUBSCRIBERS = 1000;
+const AUTO_APPROVE_MIN_LIKES = 50;
+
+function getYouTubeVideoId(url: string): string | null {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+async function fetchYouTubeStats(videoId: string): Promise<{ videoLikes: number; channelSubscribers: number; channelId: string } | null> {
+  const apiKey = (import.meta as any).env?.VITE_YOUTUBE_API_KEY || '';
+  if (!apiKey) return null;
+  try {
+    const vRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=statistics,snippet&key=${apiKey}`);
+    const vData = await vRes.json();
+    if (!vData.items?.[0]) return null;
+    const videoLikes = parseInt(vData.items[0].statistics?.likeCount || '0', 10);
+    const channelId = vData.items[0].snippet?.channelId || '';
+    if (!channelId) return null;
+    const cRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?id=${channelId}&part=statistics&key=${apiKey}`);
+    const cData = await cRes.json();
+    const channelSubscribers = parseInt(cData.items?.[0]?.statistics?.subscriberCount || '0', 10);
+    return { videoLikes, channelSubscribers, channelId };
+  } catch {
+    return null;
+  }
 }
 
 export async function getTutorials(tag?: string): Promise<Tutorial[]> {
@@ -341,11 +376,11 @@ export async function getTutorials(tag?: string): Promise<Tutorial[]> {
       : query(ref);
     const snap = await getDocs(q);
     const tutorials = snap.docs.map(d => ({ id: d.id, ...d.data() } as Tutorial));
-    return tutorials.sort((a, b) => {
+    // Only show approved tutorials (backward-compat: show tutorials with no status field)
+    const visible = tutorials.filter(t => !t.status || t.status === 'approved');
+    return visible.sort((a, b) => {
       if ((b.likes || 0) !== (a.likes || 0)) return (b.likes || 0) - (a.likes || 0);
-      const ta = a.createdAt?.toMillis?.() || 0;
-      const tb = b.createdAt?.toMillis?.() || 0;
-      return tb - ta;
+      return (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0);
     });
   } catch (error) {
     console.error('Error fetching tutorials:', error);
@@ -353,16 +388,69 @@ export async function getTutorials(tag?: string): Promise<Tutorial[]> {
   }
 }
 
-export async function createTutorial(data: Omit<Tutorial, 'id' | 'createdAt' | 'likes'>): Promise<string> {
+// Submit a tutorial — auto-approves if YouTube stats pass thresholds, else sets pending
+export async function createTutorial(data: Omit<Tutorial, 'id' | 'createdAt' | 'likes'>): Promise<{ id: string; status: 'approved' | 'pending' }> {
   const ref = collection(db, 'tutorials');
-  // Strip undefined values — Firestore rejects them
-  const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+
+  let status: 'approved' | 'pending' = 'pending';
+  let videoLikes: number | undefined;
+  let channelSubscribers: number | undefined;
+  let youtubeVideoId: string | undefined;
+  let youtubeChannelId: string | undefined;
+
+  // Check YouTube stats if a video URL is provided
+  if (data.videoUrl) {
+    const vid = getYouTubeVideoId(data.videoUrl);
+    if (vid) {
+      youtubeVideoId = vid;
+      const stats = await fetchYouTubeStats(vid);
+      if (stats) {
+        videoLikes = stats.videoLikes;
+        channelSubscribers = stats.channelSubscribers;
+        youtubeChannelId = stats.channelId;
+        if (stats.videoLikes >= AUTO_APPROVE_MIN_LIKES && stats.channelSubscribers >= AUTO_APPROVE_MIN_SUBSCRIBERS) {
+          status = 'approved';
+        }
+      }
+      // If no API key configured, auto-approve (admin can review later)
+      if (!((import.meta as any).env?.VITE_YOUTUBE_API_KEY)) status = 'approved';
+    } else {
+      // Not a YouTube URL — no video check, goes to pending
+    }
+  } else {
+    // No video URL at all — goes to pending (admin must approve)
+    status = 'pending';
+  }
+
+  const clean = Object.fromEntries(
+    Object.entries({ ...data, videoLikes, channelSubscribers, youtubeVideoId, youtubeChannelId })
+      .filter(([, v]) => v !== undefined)
+  );
+
   const docRef = await addDoc(ref, {
     ...clean,
     likes: 0,
+    status,
     createdAt: serverTimestamp(),
   });
-  return docRef.id;
+  return { id: docRef.id, status };
+}
+
+// ── Admin tutorial moderation ─────────────────────────────────────────────────
+export async function getPendingTutorials(): Promise<Tutorial[]> {
+  try {
+    const snap = await getDocs(query(collection(db, 'tutorials'), where('status', '==', 'pending')));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Tutorial))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  } catch { return []; }
+}
+
+export async function approveTutorial(id: string): Promise<void> {
+  await updateDoc(doc(db, 'tutorials', id), { status: 'approved' });
+}
+
+export async function rejectTutorial(id: string, reason?: string): Promise<void> {
+  await updateDoc(doc(db, 'tutorials', id), { status: 'rejected', rejectionReason: reason || '' });
 }
 
 export async function likeTutorial(tutorialId: string, userId: string): Promise<boolean> {

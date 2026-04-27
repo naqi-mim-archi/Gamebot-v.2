@@ -1911,7 +1911,7 @@ setFileDiffs(diffs);
               {/* Device frame */}
               {deviceView === 'tablet' ? (
                 <div
-                  className="relative rounded-[2rem] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(0,0,0,0.9)]"
+                  className="relative rounded-[2rem] overflow-hidden border-[6px] border-zinc-600 shadow-[0_0_0_1px_rgba(255,0,192,0.4),0_0_40px_rgba(255,0,192,0.2),0_0_80px_rgba(0,0,0,0.9)]"
                   style={{ height: '90vh', aspectRatio: '3/4' }}
                 >
                   <iframe
@@ -2007,7 +2007,7 @@ setFileDiffs(diffs);
                   )}
                 </div>
               ) : deviceView === 'tablet' ? (
-                <div className="h-[90%] max-h-full relative rounded-2xl overflow-hidden border-2 border-zinc-700 shadow-[0_0_40px_rgba(0,0,0,0.8),0_0_0_1px_rgba(255,0,192,0.15)]" style={{ aspectRatio: '3/4' }}>
+                <div className="h-[90%] max-h-full relative rounded-[28px] overflow-hidden border-[6px] border-zinc-600 shadow-[0_0_0_1px_rgba(255,0,192,0.4),0_0_40px_rgba(255,0,192,0.2),0_0_80px_rgba(0,0,0,0.8)]" style={{ aspectRatio: '3/4' }}>
                   <iframe
                     key={files ? Object.entries(files).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+':'+v.length).join('|') : 'empty'}
                     ref={iframeRef}
