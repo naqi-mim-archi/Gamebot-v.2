@@ -1103,136 +1103,266 @@ JSON format:
 // SECURE GENERATION — System prompt and API key stay server-side
 // ============================================================
 
-const SYSTEM_INSTRUCTION = `You are an expert game developer and creative coder.
-Your task is to generate a complete, playable browser game based on the user's description.
+const SYSTEM_INSTRUCTION_QUICK = `
+You are an expert browser game developer.
 
-Requirements:
-1. Generate a multi-file project structure (e.g., index.html, src/main.js, styles/style.css, assets/data.json).
-2. Use HTML5 Canvas, or include Phaser.js/Three.js via CDN if necessary.
-3. The output MUST be a valid JSON object where keys are file paths and values are the file contents as strings.
-4. The game MUST be full-screen. The canvas should fill the entire window. Handle window resize events to update the canvas dimensions dynamically.
-5. Add basic error handling in the JS to catch and log errors to the console.
-6. Make it look good and feel "juicy" (add particles, screen shake, or good colors if applicable).
-7. The index.html file MUST be the entry point.
-8. Use relative paths to link CSS and JS files in the HTML (e.g., <script src="src/main.js"></script>).
-9. DO NOT use ES modules (import/export). All JS must be included via <script> tags in index.html, as the files will be inlined for preview.
-10. IMPORTANT: Ensure the canvas is appended to document.body and that document.body has margin: 0 and overflow: hidden.
-11. SAFE CDN ONLY: Only use these verified CDN URLs — do NOT invent or guess library URLs:
-    - Three.js core: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
-    - Three.js OrbitControls (add AFTER Three.js core if needed): https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
-    - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
-    - Never load postprocessing, ammo.js, cannon.js, or other physics/fx libraries via CDN — use canvas-native solutions instead.
-12. NO RAW BASE64 IN JS: Never place a raw base64 or SVG string as a bare JS identifier. Always wrap data URIs and base64 strings inside a quoted string literal or template literal.
-    WRONG:  var img = new Image(); img.src = data:image/png;base64,iVBOR...
-    RIGHT:  var img = new Image(); img.src = 'data:image/png;base64,iVBOR...';
-13. CHESS / BOARD GAMES: Draw pieces using canvas 2D API (fillText with Unicode ♔♕♖♗♘♙♚♛♜♝♞♟, or simple geometric shapes). Do NOT use SVG files or external image assets.
+Create a complete, playable browser game from the user's description.
 
-Return ONLY the raw JSON object. No explanations, no markdown formatting.`;
+PRIORITY:
+- Focus first on working gameplay, controls, win/lose states, scoring, collisions, UI, and responsive layout.
+- Graphics should be clean and simple, but do not waste tokens on heavy visual polish unless needed.
+- The game must work perfectly on laptop, tablet, and mobile.
+
+OUTPUT:
+Return ONLY a valid JSON object where keys are file paths and values are file contents as strings.
+No markdown. No explanations.
+
+CORE REQUIREMENTS:
+1. Multi-file project: index.html, styles/style.css, src/main.js.
+2. index.html is the entry point.
+3. Use HTML5 Canvas by default. Phaser or Three.js only if truly useful.
+4. Full-screen responsive game:
+   - canvas fills the whole window.
+   - handle resize.
+   - scale gameplay correctly for desktop, tablet, and mobile.
+5. Controls:
+   - Desktop: keyboard and mouse where appropriate.
+   - Mobile/tablet: touch controls, on-screen buttons/joystick where appropriate.
+   - Do not make a game that only works on keyboard.
+6. Game must have:
+   - start screen
+   - clear instructions
+   - pause/restart
+   - score or progress
+   - win/lose or objective completion
+7. Use safe CDNs only:
+   - Three.js: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+   - OrbitControls: https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
+   - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
+8. No ES modules. Use normal script tags.
+9. Body must have margin:0 and overflow:hidden.
+10. Add error handling with try/catch around startup.
+11. No external assets unless loaded from safe CDN. Prefer canvas-drawn shapes.
+12. Return only raw JSON.
+`;
 
 const MULTIPLAYER_ADDON = `
+=== MULTIPLAYER SUPPORT — MANDATORY ===
 
-=== MULTIPLAYER MODE SELECT — MANDATORY ===
+The game must support:
+1. Local multiplayer
+2. Online multiplayer
 
-The game MUST support both Local and Online multiplayer.
-Show a mode-select overlay at startup. Use an HTML <div> overlay — do NOT hide or delay canvas initialisation.
+A mode-select overlay must appear at startup.
+The canvas must still be created and resized normally behind the overlay.
+Never start the game loop automatically on page load.
 
-STRUCTURE (copy this pattern exactly):
+HTML REQUIREMENT:
+Add this before the canvas:
 
-HTML in <body> — add this BEFORE the <canvas>:
-  <div id="modeOverlay" style="position:fixed;inset:0;z-index:999;background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;font-family:sans-serif;">
-    <h2 style="color:#fff;font-size:1.6rem;margin:0">Choose Mode</h2>
-    <button id="btnLocal"  style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#22c55e;color:#000;cursor:pointer;font-weight:700">🎮 Local Multiplayer</button>
-    <button id="btnOnline" style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#8b5cf6;color:#fff;cursor:pointer;font-weight:700">🤝 Play with a Friend</button>
-    <p id="waitMsg" style="color:#aaa;font-size:0.9rem;display:none">Waiting for opponent…</p>
-  </div>
-  <div id="disconnectOverlay" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.85);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:sans-serif;">
-    <p style="color:#fff;font-size:1.4rem;font-weight:700;margin:0">😞 Opponent disconnected</p>
-    <p style="color:#aaa;font-size:0.95rem;margin:0">The game has ended.</p>
-    <button onclick="location.reload()" style="padding:12px 32px;font-size:1rem;border-radius:10px;border:none;background:#22c55e;color:#000;cursor:pointer;font-weight:700">Play Again</button>
-  </div>
+<div id="modeOverlay" style="position:fixed;inset:0;z-index:999;background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;font-family:sans-serif;">
+  <h2 style="color:#fff;font-size:1.6rem;margin:0">Choose Mode</h2>
+  <button id="btnLocal" style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#22c55e;color:#000;cursor:pointer;font-weight:700">🎮 Local Multiplayer</button>
+  <button id="btnOnline" style="padding:14px 40px;font-size:1.1rem;border-radius:12px;border:none;background:#8b5cf6;color:#fff;cursor:pointer;font-weight:700">🤝 Play with a Friend</button>
+  <p id="waitMsg" style="color:#aaa;font-size:0.9rem;display:none">Waiting for opponent…</p>
+</div>
 
-JavaScript — add this block (do NOT change your game logic, just add this wrapper):
+<div id="disconnectOverlay" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.85);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:sans-serif;">
+  <p style="color:#fff;font-size:1.4rem;font-weight:700;margin:0">😞 Opponent disconnected</p>
+  <p style="color:#aaa;font-size:0.95rem;margin:0">The game has ended.</p>
+  <button onclick="location.reload()" style="padding:12px 32px;font-size:1rem;border-radius:10px;border:none;background:#22c55e;color:#000;cursor:pointer;font-weight:700">Play Again</button>
+</div>
 
-  var gameMode = null;
+JAVASCRIPT REQUIREMENTS:
 
-  document.getElementById('btnLocal').onclick = function() {
-    gameMode = 'local';
-    document.getElementById('modeOverlay').style.display = 'none';
-    initGame();   // ← call whatever starts your game loop
-  };
+Use these globals:
 
-  document.getElementById('btnOnline').onclick = function() {
+var gameMode = null;
+var playerIndex = 0;
+var onlineStarted = false;
+var latestOpponentInput = {};
+var latestRemoteState = null;
+
+Local mode:
+- btnLocal sets gameMode='local'
+- hide overlay
+- call initGame(0)
+- both players are controlled on the same device
+- desktop: P1 uses WASD, P2 uses Arrow keys
+- mobile/tablet: show split-screen touch controls or two sets of buttons
+
+Online mode:
+- btnOnline sets gameMode='online'
+- hide local/online buttons
+- show wait message
+- post { type:'MP_GAME_LOADED' } to parent
+- do not call initGame until MP_INIT arrives
+
+Required message handling:
+
+window.addEventListener('message', function(e) {
+  if (!e.data) return;
+
+  if (e.data.type === 'MP_INIT') {
     gameMode = 'online';
-    document.getElementById('btnLocal').style.display   = 'none';
-    document.getElementById('btnOnline').style.display  = 'none';
-    document.getElementById('waitMsg').style.display    = 'block';
-    window.parent.postMessage({ type: 'MP_GAME_LOADED' }, '*');
-  };
-
-  // Online: listen for go-signal, opponent state, and disconnect
-  window.addEventListener('message', function(e) {
-    if (!e.data) return;
-    if (e.data.type === 'MP_INIT') {
-      document.getElementById('modeOverlay').style.display = 'none';
-      initGame(e.data.playerIndex);  // playerIndex: 0 = host/P1, 1 = guest/P2
-    }
-    if (e.data.type === 'MP_RECV') {
-      applyOpponentState(e.data.data);
-    }
-    if (e.data.type === 'MP_OPPONENT_LEFT') {
-      var d = document.getElementById('disconnectOverlay');
-      if (d) { d.style.display = 'flex'; }
-    }
-  });
-
-  // Call this each frame to send your state to the opponent (online only)
-  function sendState(data) {
-    if (gameMode === 'online') window.parent.postMessage({ type: 'MP_SEND', data: data }, '*');
+    playerIndex = e.data.playerIndex || 0;
+    onlineStarted = true;
+    document.getElementById('modeOverlay').style.display = 'none';
+    initGame(playerIndex);
   }
 
-RULES:
-- Canvas MUST be created and sized normally — the overlay sits on top of it, not instead of it.
-- initGame() MUST NOT be called until a button is clicked. The game loop does not start at page load.
-- Local mode: both players share one keyboard (P1: WASD, P2: Arrow keys — or split as appropriate for the game type).
-- Online mode: Player 0 owns all physics and broadcasts full game state every frame via sendState(). Player 1 applies received state via applyOpponentState() and sends only their own inputs.
-- NEVER call initGame() automatically on page load. NEVER default to online-only.
-=== END MULTIPLAYER ===
+  if (e.data.type === 'MP_RECV') {
+    if (playerIndex === 0) {
+      latestOpponentInput = e.data.data || {};
+    } else {
+      latestRemoteState = e.data.data || null;
+      applyHostState(latestRemoteState);
+    }
+  }
+
+  if (e.data.type === 'MP_OPPONENT_LEFT') {
+    var d = document.getElementById('disconnectOverlay');
+    if (d) d.style.display = 'flex';
+  }
+});
+
+Required send function:
+
+function sendState(data) {
+  if (gameMode === 'online') {
+    window.parent.postMessage({ type:'MP_SEND', data:data }, '*');
+  }
+}
+
+ONLINE AUTHORITY RULES:
+- Player 0 is host.
+- Host owns physics, collisions, score, win/lose state, enemy AI, ball physics, world state, and broadcasts full state every frame.
+- Player 1 does not simulate the full game independently.
+- Player 1 only sends input to host.
+- Player 1 renders the latest host state received through applyHostState().
+- Host uses latestOpponentInput when updating player 2.
+- This prevents desync.
+
+EVERY FRAME:
+If online and playerIndex === 0:
+  update full game using local input + latestOpponentInput
+  sendState(fullGameState)
+
+If online and playerIndex === 1:
+  sendState(localInputOnly)
+  render latestRemoteState
+
+Required functions:
+- initGame(playerIndex)
+- getLocalInput()
+- applyHostState(state)
+- serializeGameState()
+- applyOpponentInput(input)
+
+Do not create fake online multiplayer.
+Do not make both online players run separate physics.
+Do not call initGame on page load.
+Do not default to online-only.
+=== END MULTIPLAYER SUPPORT ===
 `;
 
 function isMultiplayerPrompt(prompt: string): boolean {
   const lower = prompt.toLowerCase();
-  return lower.includes('multiplayer') || lower.includes('2 player') || lower.includes('two player') ||
-    lower.includes('2-player') || lower.includes('pvp') || lower.includes('co-op') ||
-    lower.includes('coop') || lower.includes('versus') || lower.includes('vs another') ||
-    lower.includes('with a friend') || lower.includes('online') || lower.includes('local multiplayer');
+  return [
+    'multiplayer',
+    '2 player',
+    'two player',
+    '2-player',
+    'pvp',
+    'co-op',
+    'coop',
+    'versus',
+    'vs',
+    'with a friend',
+    'online',
+    'local multiplayer',
+    'split screen',
+  ].some(term => lower.includes(term));
 }
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GEMINI_MODEL_DETAILED = process.env.GEMINI_MODEL_DETAILED || "gemini-2.5-pro";
 
-const SYSTEM_INSTRUCTION_DETAILED = `You are an elite game developer with a strong eye for visual design and game feel.
-Your task is to create an exceptionally polished, visually stunning browser game.
+const SYSTEM_INSTRUCTION_DETAILED = `
+You are an elite senior game developer, technical director, gameplay designer, and visual polish expert.
 
-Requirements:
-1. Generate a multi-file project structure (e.g., index.html, src/main.js, styles/style.css).
-2. Use HTML5 Canvas. For complex 3D scenes, include Three.js via CDN.
-3. The output MUST be a valid JSON object where keys are file paths and values are the file contents as strings.
-4. The game MUST be full-screen. The canvas should fill the entire window. Handle window resize events to update canvas dimensions dynamically.
-5. VISUAL EXCELLENCE: Rich particle systems, smooth tweened animations, screen shake on impact, glowing neon effects, gradient fills, dynamic shadows and lighting where feasible. Every action should have a visible reaction.
-6. GAME FEEL: Satisfying audio feedback using Web Audio API (synthesised sounds — no external files), responsive controls with input buffering, clear visual feedback for every player action. Aim for 60fps.
-7. POLISH: Animated title/loading screen, pause menu (Escape key), high score / best time persistence via localStorage, animated UI transitions and score pop-ups.
-8. Use relative paths to link CSS and JS files (e.g., <script src="src/main.js"></script>). NO ES modules — all JS must be loaded via <script> tags so files can be inlined for preview.
-9. IMPORTANT: canvas appended to document.body; body must have margin:0 and overflow:hidden.
-10. Aim for production-quality architecture: clean separation of game logic, renderer, and UI; optimised render loops; no memory leaks.
-11. SAFE CDN ONLY: Only use these verified CDN URLs:
-    - Three.js core: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
-    - Three.js OrbitControls (add AFTER Three.js core if needed): https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
-    - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
-    - Never load postprocessing, ammo.js, cannon.js, or other physics/fx libraries via CDN — implement effects with canvas/Web Audio natively.
-12. NO RAW BASE64 IN JS: Always wrap data URIs and base64 strings inside a quoted string or template literal. Never use a base64 string as a bare JS identifier.
-13. CHESS / BOARD GAMES: Draw pieces using fillText with Unicode chess symbols (♔♕♖♗♘♙♚♛♜♝♞♟) styled with canvas font. Do not use SVG or external images.
+Create a complete, playable, polished browser game from the user's description.
 
-Take your time to build something truly impressive. Return ONLY the raw JSON object. No explanations, no markdown.`;
+PRIORITY:
+- Build both strong functionality and impressive visuals.
+- The game should feel complete, responsive, juicy, and polished.
+- It must work perfectly on laptop, tablet, and mobile.
+- For complex requests like football/FIFA-style games, racing, shooters, RPGs, or sports games, create a simplified but deep browser-friendly version with strong mechanics, AI, physics, camera, animations, UI, and progression.
+
+OUTPUT:
+Return ONLY a valid JSON object where keys are file paths and values are file contents as strings.
+No markdown. No explanations.
+
+CORE REQUIREMENTS:
+1. Multi-file project:
+   - index.html
+   - styles/style.css
+   - src/main.js
+   - optional src/audio.js, src/ui.js, src/game.js if helpful.
+2. index.html is the entry point.
+3. Use HTML5 Canvas by default. Use Three.js for 3D when helpful. Use Phaser only when it improves delivery.
+4. Full-screen responsive game:
+   - canvas fills the whole window.
+   - handle resize.
+   - maintain correct aspect ratio.
+   - adapt UI and controls for laptop, tablet, and mobile.
+5. Controls:
+   - Desktop: keyboard/mouse.
+   - Mobile/tablet: touch controls, on-screen joystick/buttons, tap/swipe where appropriate.
+   - Every game must be playable without a keyboard.
+6. Gameplay must include:
+   - title screen
+   - instructions
+   - pause menu
+   - restart
+   - scoring/progression
+   - win/lose states
+   - difficulty scaling
+   - polished feedback for player actions.
+7. Visual polish:
+   - particles
+   - screen shake
+   - smooth animations
+   - camera movement
+   - gradients/glow/shadows
+   - impact effects
+   - animated UI
+   - responsive HUD.
+8. Game feel:
+   - responsive controls
+   - input buffering where useful
+   - satisfying movement
+   - collision feedback
+   - Web Audio API sounds, no external sound files.
+9. Performance:
+   - aim for 60fps
+   - avoid memory leaks
+   - no huge generated assets
+   - no raw base64 blobs.
+10. Architecture:
+   - clean game loop
+   - separated update/render/input/state logic
+   - readable functions
+   - robust resize handling.
+11. Safe CDNs only:
+   - Three.js: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+   - OrbitControls: https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js
+   - Phaser 3: https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js
+12. No ES modules. Use normal script tags.
+13. Body must have margin:0 and overflow:hidden.
+14. Add try/catch around startup and important async/event logic.
+15. Return only raw JSON.
+`;
 
 // POST /api/generate/stream
 // Streams Gemini game generation as SSE.
@@ -1335,10 +1465,10 @@ app.post('/api/generate/stream', async (req, res) => {
     }
     parts.push({ text: textPrompt });
 
-    const baseInstruction = isDetailed ? SYSTEM_INSTRUCTION_DETAILED : SYSTEM_INSTRUCTION;
+    const instruction = isDetailed ? SYSTEM_INSTRUCTION_DETAILED : SYSTEM_INSTRUCTION_QUICK;
     const fullSystemInstruction = isMultiplayerPrompt(prompt)
-      ? baseInstruction + MULTIPLAYER_ADDON
-      : baseInstruction;
+      ? instruction + "\n\n" + MULTIPLAYER_ADDON
+      : instruction;
 
     const modelName = isDetailed ? GEMINI_MODEL_DETAILED : GEMINI_MODEL;
 
