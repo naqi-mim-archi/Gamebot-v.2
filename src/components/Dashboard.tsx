@@ -323,6 +323,7 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
   const[games, setGames] = useState<SavedGame[]>([]);
   const[loading, setLoading] = useState(true);
   const[showSuccess, setShowSuccess] = useState(false);
+  const[paymentError, setPaymentError] = useState<string | null>(null);
   const[loadingPortal, setLoadingPortal] = useState(false);
   const[likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [discordModal, setDiscordModal] = useState<SavedGame | null>(null);
@@ -332,13 +333,38 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
   const blueGlowStyle = { boxShadow: '0px 0px 15px 1px rgba(0, 175, 255, 0.4)' };
 
   useEffect(() => {
-    if (searchParams.get('session_id')) {
-      setShowSuccess(true);
-      searchParams.delete('session_id');
-      setSearchParams(searchParams);
-      setTimeout(() => setShowSuccess(false), 5000);
-    }
-  },[searchParams, setSearchParams]);
+    const sessionId = searchParams.get('session_id');
+    if (!sessionId || !user) return;
+
+    let cancelled = false;
+    const fulfillPayment = async () => {
+      setPaymentError(null);
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch('/api/checkout-session/fulfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ sessionId }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not verify payment');
+        if (cancelled) return;
+
+        setShowSuccess(true);
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete('session_id');
+        setSearchParams(nextParams, { replace: true });
+        setTimeout(() => setShowSuccess(false), 5000);
+      } catch (error: any) {
+        if (!cancelled) {
+          setPaymentError(error?.message || 'Payment succeeded, but credits are still being confirmed. Refresh to retry.');
+        }
+      }
+    };
+
+    fulfillPayment();
+    return () => { cancelled = true; };
+  },[searchParams, setSearchParams, user]);
 
   const handleManageBilling = async () => {
     if (!userProfile?.stripeCustomerId) return;
@@ -444,9 +470,16 @@ export default function Dashboard({ user, userProfile, onLogout }: DashboardProp
             <CheckCircle2 className="w-6 h-6 shrink-0" />
             <div>
               <p className="font-bold">Neural Link Established: Payment Successful!</p>
-              <p className="text-sm opacity-80">Your account is being updated. It may take a few seconds for your new credits to initialize.</p>
+              <p className="text-sm opacity-80">Your purchase has been verified and your account credits were applied.</p>
             </div>
           </motion.div>
+        )}
+
+        {paymentError && (
+          <div className="bg-red-500/10 border border-red-500/30 text-red-300 p-4 rounded-2xl mb-8">
+            <p className="font-bold">Payment confirmation is still pending</p>
+            <p className="text-sm opacity-80">{paymentError}</p>
+          </div>
         )}
 
         {/* Stats Grid */}

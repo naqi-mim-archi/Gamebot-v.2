@@ -63,42 +63,103 @@ function getFirebaseAdmin() {
   return getFirestore();
 }
 
+type CheckoutFulfillmentStatus = 'processed' | 'already_processed' | 'pending_payment';
+
+const VALID_CHECKOUT_TIERS = new Set(['topup', 'creator', 'pro', 'studio']);
+
+async function fulfillCheckoutSession(
+  db: Firestore,
+  session: Stripe.Checkout.Session,
+  sourceId: string,
+): Promise<CheckoutFulfillmentStatus> {
+  if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+    return 'pending_payment';
+  }
+
+  const userId = session.client_reference_id;
+  const tier = session.metadata?.tier;
+  const credits = Number(session.metadata?.credits);
+
+  if (!session.id || !userId || !tier || !VALID_CHECKOUT_TIERS.has(tier)) {
+    throw new Error(`Checkout session ${session.id || 'unknown'} has invalid fulfillment metadata.`);
+  }
+  if (!Number.isSafeInteger(credits) || credits <= 0) {
+    throw new Error(`Checkout session ${session.id} has an invalid credit amount.`);
+  }
+
+  // Use the Checkout Session ID, rather than the event ID, as the idempotency key.
+  // Stripe can emit more than one successful event for the same Checkout Session.
+  const fulfillmentRef = db.collection('fulfilledCheckoutSessions').doc(session.id);
+  const userRef = db.collection('users').doc(userId);
+  let status: CheckoutFulfillmentStatus = 'processed';
+
+  await db.runTransaction(async transaction => {
+    const fulfillmentSnap = await transaction.get(fulfillmentRef);
+    if (fulfillmentSnap.exists) {
+      status = 'already_processed';
+      return;
+    }
+
+    const userSnap = await transaction.get(userRef);
+    if (!userSnap.exists) {
+      throw new Error(`Cannot fulfill Checkout Session ${session.id}: user ${userId} does not exist.`);
+    }
+
+    const userUpdates: Record<string, unknown> = {
+      credits: FieldValue.increment(credits),
+    };
+
+    if (tier !== 'topup') {
+      userUpdates.tier = tier;
+      userUpdates.trialEndDate = null;
+      if (typeof session.customer === 'string') {
+        userUpdates.stripeCustomerId = session.customer;
+      }
+    }
+
+    transaction.update(userRef, userUpdates);
+    transaction.create(fulfillmentRef, {
+      checkoutSessionId: session.id,
+      sourceId,
+      userId,
+      tier,
+      credits,
+      processedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return status;
+}
+
 // Webhook MUST be before express.json() so it gets the raw body
 app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
+  let event: Stripe.Event;
+
   try {
     const stripe = getStripe();
-    const event = stripe.webhooks.constructEvent(
+    event = stripe.webhooks.constructEvent(
       req.body,
       sig as string,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
+  } catch (err: any) {
+    console.error("Webhook signature error:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
 
+  try {
+    const stripe = getStripe();
     const db = getFirebaseAdmin();
     if (!db) {
       console.error("Firebase Admin not initialized");
       return res.status(500).send("DB Error");
     }
 
-    if (event.type === 'checkout.session.completed') {
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object as Stripe.Checkout.Session;
-      const userId = session.client_reference_id;
-      const tier = session.metadata?.tier;
-      const credits = parseInt(session.metadata?.credits || '0');
-
-      if (userId) {
-        const userRef = db.collection('users').doc(userId);
-        if (tier === 'topup') {
-          await userRef.update({ credits: FieldValue.increment(credits) });
-        } else if (tier) {
-          await userRef.update({
-            tier: tier,
-            credits: FieldValue.increment(credits),
-            stripeCustomerId: session.customer as string,
-            trialEndDate: null,
-          });
-        }
-      }
+      const status = await fulfillCheckoutSession(db, session, event.id);
+      console.info(`Stripe checkout ${session.id}: ${status}`);
     }
 
     // Handle subscription updates and cancellations
@@ -154,8 +215,8 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
 
     res.json({ received: true });
   } catch (err: any) {
-    console.error("Webhook Error:", err.message);
-    res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error("Webhook processing error:", err.message);
+    res.status(500).send("Webhook processing failed");
   }
 });
 
@@ -191,34 +252,24 @@ app.post('/api/email/welcome', async (req, res) => {
   }
 });
 
-// ── Promo Code Validation ─────────────────────────────────────────────────────
-app.post('/api/validate-promo', async (req, res) => {
-  try {
-    const { code } = req.body;
-    if (!code) return res.status(400).json({ valid: false, error: 'No code provided' });
-
-    const normalised = code.toUpperCase().trim();
-    const snap = await db.collection('promoCodes').doc(normalised).get();
-
-    if (!snap.exists) return res.json({ valid: false, error: 'Invalid promo code' });
-
-    const data = snap.data()!;
-    if (!data.active) return res.json({ valid: false, error: 'This promo code is no longer active' });
-    if (data.maxUses > 0 && data.usedCount >= data.maxUses)
-      return res.json({ valid: false, error: 'This promo code has reached its usage limit' });
-    if (data.expiresAt && data.expiresAt.toMillis() < Date.now())
-      return res.json({ valid: false, error: 'This promo code has expired' });
-
-    res.json({ valid: true, discountPercent: data.discountPercent, code: normalised });
-  } catch (error: any) {
-    res.status(500).json({ valid: false, error: error.message });
-  }
-});
-
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
-    const { tier, userId, email, returnUrl, promoCode } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing auth token' });
+    }
+
+    const { tier, returnUrl } = req.body;
     const stripe = getStripe();
+    const db = getFirebaseAdmin();
+    if (!db) return res.status(500).json({ error: 'Database unavailable' });
+    const decoded = await getAuth().verifyIdToken(authHeader.slice(7));
+    const userId = decoded.uid;
+    const email = decoded.email;
+    if (!email) return res.status(400).json({ error: 'Your account does not have an email address' });
+    if (typeof returnUrl !== 'string' || !returnUrl) {
+      return res.status(400).json({ error: 'Missing return URL' });
+    }
 
     let unit_amount = 0;
     let name = '';
@@ -234,35 +285,6 @@ app.post('/api/create-checkout-session', async (req, res) => {
     else if (tier === 'topup_100') { unit_amount = 10000; name = '2000 Credits Top-up'; credits = 2000; mode = 'payment'; }
     else { return res.status(400).json({ error: 'Invalid tier' }); }
 
-    // Resolve promo code → Stripe coupon
-    let discounts: { coupon: string }[] | undefined;
-    if (promoCode) {
-      const normalised = promoCode.toUpperCase().trim();
-      const promoSnap = await db.collection('promoCodes').doc(normalised).get();
-      if (promoSnap.exists) {
-        const promoData = promoSnap.data()!;
-        if (promoData.active && !(promoData.maxUses > 0 && promoData.usedCount >= promoData.maxUses)) {
-          // Reuse existing Stripe coupon or create a new one
-          let couponId: string = promoData.stripeCouponId || '';
-          if (!couponId) {
-            const coupon = await stripe.coupons.create({
-              percent_off: promoData.discountPercent,
-              duration: 'once',
-              name: `${normalised} — ${promoData.discountPercent}% off`,
-            });
-            couponId = coupon.id;
-            // Cache coupon ID so we reuse it next time
-            await db.collection('promoCodes').doc(normalised).update({ stripeCouponId: couponId });
-          }
-          discounts = [{ coupon: couponId }];
-          // Increment usage counter
-          await db.collection('promoCodes').doc(normalised).update({
-            usedCount: FieldValue.increment(1),
-          });
-        }
-      }
-    }
-
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: mode,
@@ -270,7 +292,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
       client_reference_id: userId,
       metadata: {
         tier: tier.startsWith('topup') ? 'topup' : tier,
-        credits: credits.toString()
+        credits: credits.toString(),
       },
       line_items: [
         {
@@ -283,7 +305,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
           quantity: 1,
         },
       ],
-      ...(discounts ? { discounts } : { allow_promotion_codes: true }),
+      allow_promotion_codes: true,
       success_url: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: returnUrl,
     });
@@ -292,6 +314,41 @@ app.post('/api/create-checkout-session', async (req, res) => {
   } catch (error: any) {
     console.error(error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Recovery path for a successful Checkout redirect. This uses the same atomic
+// fulfillment transaction as the webhook, so calling both cannot double-credit.
+app.post('/api/checkout-session/fulfill', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing auth token' });
+    }
+
+    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+    if (!sessionId.startsWith('cs_')) {
+      return res.status(400).json({ error: 'Invalid Checkout Session ID' });
+    }
+
+    const db = getFirebaseAdmin();
+    if (!db) return res.status(500).json({ error: 'Database unavailable' });
+    const decoded = await getAuth().verifyIdToken(authHeader.slice(7));
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.client_reference_id !== decoded.uid) {
+      return res.status(403).json({ error: 'This Checkout Session belongs to another account' });
+    }
+
+    const status = await fulfillCheckoutSession(db, session, `return:${session.id}`);
+    if (status === 'pending_payment') {
+      return res.status(409).json({ status, error: 'Stripe has not confirmed this payment yet' });
+    }
+
+    res.json({ status });
+  } catch (error: any) {
+    console.error('Checkout fulfillment error:', error);
+    res.status(500).json({ error: 'Could not verify and fulfill this payment' });
   }
 });
 
@@ -1731,22 +1788,7 @@ app.delete('/api/admin/tutorials/:id', requireAdmin, async (req: any, res) => {
   } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
-// 5. Promo Codes
-app.post('/api/admin/create-promo', requireAdmin, async (req: any, res) => {
-  try {
-    const { code, discountPercent } = req.body;
-    await req.db.collection('promoCodes').doc(code.toUpperCase()).set({
-      discountPercent: Number(discountPercent),
-      maxUses: 100,
-      usedCount: 0,
-      active: true,
-      createdAt: FieldValue.serverTimestamp()
-    });
-    res.json({ success: true });
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
-});
-
-// 6. Stripe Transactions & MRR
+// 5. Stripe Transactions & MRR
 app.get('/api/admin/transactions', requireAdmin, async (req: any, res) => {
   try {
     const stripe = getStripe();

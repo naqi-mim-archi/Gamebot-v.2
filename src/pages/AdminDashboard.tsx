@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CreditCard, Search,
-  Trash2, Gamepad2, Gift, Activity, ChevronRight,
+  Trash2, Gamepad2, Activity, ChevronRight,
   BookOpen, ExternalLink, Globe, Lock, ArrowLeft, Plus, Eye, DollarSign, Ban, X,
-  CheckCircle2, XCircle, Clock, Youtube, Users2, ThumbsUp, Tag, Zap
+  CheckCircle2, XCircle, Clock, Youtube, Users2, ThumbsUp
 } from 'lucide-react';
 import TutorialModal from '../components/TutorialModal';
 import { getPendingTutorials, approveTutorial, rejectTutorial, Tutorial } from '../services/db';
@@ -743,130 +743,25 @@ function TabTutorials({ user, onError, onPendingCount }: any) {
   );
 }
 
-// ─── TAB 5: BILLING & PROMOS ─────────────────────────────────────────────────
+// ─── TAB 5: BILLING & STRIPE ─────────────────────────────────────────────────
 function TabBilling({ user, onError }: any) {
-  const [promoCode, setPromoCode] = useState('');
-  const [discount, setDiscount] = useState(20);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [promos, setPromos] = useState<any[]>([]);
-  const [promoSaving, setPromoSaving] = useState(false);
 
   const loadAll = async () => {
     try {
       const token = await user.getIdToken();
-      const [txData, promoData] = await Promise.allSettled([
-        fetchAdminData('/api/admin/transactions', token),
-        fetchAdminData('/api/admin/promos', token),
-      ]);
-      if (txData.status === 'fulfilled' && txData.value.transactions) setTransactions(txData.value.transactions);
-      if (promoData.status === 'fulfilled' && promoData.value.promos) setPromos(promoData.value.promos);
+      const txData = await fetchAdminData('/api/admin/transactions', token);
+      if (txData.transactions) setTransactions(txData.transactions);
     } catch (e: any) { onError(e.message); }
   };
 
   useEffect(() => { loadAll(); }, [user]);
 
-  const handleCreatePromo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!promoCode.trim()) return;
-    setPromoSaving(true);
-    try {
-      const token = await user.getIdToken();
-      await fetchAdminData('/api/admin/create-promo', token, 'POST', { code: promoCode, discountPercent: discount });
-      setPromoCode('');
-      loadAll();
-    } catch (e: any) { onError(e.message); }
-    finally { setPromoSaving(false); }
-  };
-
-  const handleDeletePromo = async (id: string) => {
-    if (!window.confirm('Delete this promo code?')) return;
-    try {
-      const token = await user.getIdToken();
-      await fetchAdminData(`/api/admin/promos/${id}`, token, 'DELETE');
-      loadAll();
-    } catch (e: any) { onError(e.message); }
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="mb-4">
         <h1 className="text-4xl font-display font-bold">Billing & Stripe</h1>
-        <p className="text-zinc-400 mt-2">Manage promo codes and monitor Stripe transactions.</p>
-      </div>
-
-      {/* Top row: promo creator + promos list */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* Create promo */}
-        <div className="bg-zinc-900 border border-white/5 rounded-2xl p-6">
-          <h2 className="text-base font-bold mb-5 flex items-center gap-2 text-zinc-300">
-            <Gift className="w-4 h-4 text-[#FF00C0]"/> Create Promo Code
-          </h2>
-          <form onSubmit={handleCreatePromo} className="space-y-4">
-            <div>
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">Code Name</label>
-              <input
-                type="text" value={promoCode}
-                onChange={e => setPromoCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
-                placeholder="e.g. LAUNCH20" required
-                className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-2.5 outline-none focus:border-[#FF00C0]/50 text-white text-sm transition-colors"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">Discount %</label>
-              <input
-                type="number" value={discount}
-                onChange={e => setDiscount(Number(e.target.value))}
-                min="1" max="100" required
-                className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-2.5 outline-none focus:border-[#FF00C0]/50 text-white text-sm transition-colors"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={promoSaving}
-              className="w-full py-3 bg-[#FF00C0] hover:bg-[#FF00C0]/80 disabled:opacity-50 text-white font-bold rounded-xl transition-colors shadow-[0_0_15px_rgba(255,0,192,0.25)] flex items-center justify-center gap-2"
-            >
-              <Zap className="w-4 h-4" />
-              {promoSaving ? 'Creating…' : 'Deploy Promo Code'}
-            </button>
-          </form>
-        </div>
-
-        {/* Active promos list */}
-        <div className="bg-zinc-900 border border-white/5 rounded-2xl p-6">
-          <h2 className="text-base font-bold mb-5 flex items-center gap-2 text-zinc-300">
-            <Tag className="w-4 h-4 text-[#FF00C0]"/> Active Promo Codes
-            {promos.length > 0 && (
-              <span className="ml-auto px-2 py-0.5 rounded-full bg-[#FF00C0]/10 border border-[#FF00C0]/20 text-[#FF00C0] text-[10px] font-bold">{promos.length}</span>
-            )}
-          </h2>
-          {promos.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 text-center">
-              <Tag className="w-8 h-8 text-zinc-700 mb-2" />
-              <p className="text-zinc-600 text-sm">No active promo codes</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {promos.map((p: any) => (
-                <div key={p.id || p.code} className="flex items-center justify-between px-4 py-3 bg-zinc-950 border border-white/5 rounded-xl hover:border-white/10 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-white text-sm tracking-wider">{p.code}</span>
-                    <span className="px-2 py-0.5 rounded-full bg-[#FF00C0]/10 border border-[#FF00C0]/20 text-[#FF00C0] text-[10px] font-bold">
-                      {p.discountPercent || p.discount}% OFF
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => handleDeletePromo(p.id || p.code)}
-                    className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                    title="Delete promo"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <p className="text-zinc-400 mt-2">Monitor Stripe transactions. Promotion codes are managed in Stripe.</p>
       </div>
 
       {/* Transactions */}

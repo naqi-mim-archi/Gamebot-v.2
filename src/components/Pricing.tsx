@@ -1,125 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Sparkles, Loader2, Zap, X, CheckCircle2, Gift, Wand2, Play } from 'lucide-react';
+import { Check, Sparkles, Loader2, Zap, Wand2, Play } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import SEO from '../components/SEO';
-import { motion, AnimatePresence } from 'framer-motion';
-
-// 👇 ADD THESE IMPORTS TO FIX THE PROMO CODE VALIDATION 👇
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../services/firebase'; 
+import { motion } from 'framer-motion';
 
 interface PricingProps {
   user?: any;
   userProfile?: any;
   onLogout?: () => void;
-}
-
-// ── Promo claim modal ───────────────────────────────────────
-function PromoClaimModal({
-  promo,
-  tierName,
-  originalPrice,
-  discountedPrice,
-  onClaim,
-  onClose,
-}: {
-  promo: { code: string; discountPercent: number };
-  tierName: string;
-  originalPrice: string;
-  discountedPrice: string;
-  onClaim: () => void;
-  onClose: () => void;
-}) {
-  const [seconds, setSeconds] = useState(600); // 10-min countdown
-  const timer = useRef<ReturnType<typeof setInterval>>();
-
-  useEffect(() => {
-    timer.current = setInterval(() => setSeconds(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(timer.current);
-  }, []);
-
-  const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
-  const ss = String(seconds % 60).padStart(2, '0');
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#05050A]/90 backdrop-blur-sm font-sora"
-      onClick={e => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0, y: 20 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        transition={{ type: 'spring', damping: 20, stiffness: 280 }}
-        className="relative w-full max-w-sm bg-[#0A0A10] border border-white/10 rounded-[32px] p-8 text-center shadow-2xl overflow-hidden"
-      >
-        <div className="absolute inset-0 bg-gradient-to-b from-[#FF00C0]/10 to-transparent pointer-events-none" />
-
-        <button onClick={onClose} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors">
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="w-16 h-16 rounded-2xl bg-[#FF00C0]/20 border border-[#FF00C0]/30 flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(255,0,192,0.3)]">
-          <Gift className="w-8 h-8 text-[#FF00C0]" />
-        </div>
-
-        <p className="text-[#B3B6CB] text-[11px] uppercase tracking-[0.2em] font-bold mb-2">Exclusive offer</p>
-        <h2 className="text-3xl font-bold text-white leading-tight mb-1">
-          You're getting
-        </h2>
-        <h2 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FF00C0] to-[#00AFFF] leading-tight mb-4">
-          {promo.discountPercent}% OFF
-        </h2>
-        <p className="text-[#B3B6CB] text-sm mb-6">
-          on <span className="text-white font-bold">{tierName}</span> — limited time offer
-        </p>
-
-        <div className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10 mb-6">
-          <CheckCircle2 className="w-4 h-4 text-[#00AFFF] shrink-0" />
-          <span className="text-white font-mono font-bold tracking-wider text-sm">{promo.code}</span>
-          <span className="text-[#B3B6CB] text-sm">applied</span>
-        </div>
-
-        <div className="flex items-center justify-center gap-6 mb-8">
-          <div>
-            <p className="text-[#FF00C0] text-2xl font-bold">{promo.discountPercent}% OFF</p>
-            <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mt-1">With promo</p>
-          </div>
-          <div className="w-px h-10 bg-white/10" />
-          <div>
-            <p className="text-white text-2xl font-bold font-mono">{mm}:{ss}</p>
-            <div className="flex gap-3 text-zinc-500 text-[10px] font-bold uppercase tracking-wider mt-1">
-              <span>minutes</span>
-              <span>seconds</span>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={onClaim}
-          className="w-full py-4 rounded-full bg-gradient-to-r from-[#FF00C0] to-[#00AFFF] text-white font-bold text-lg transition-all hover:opacity-90 active:scale-95"
-        >
-          Claim {discountedPrice}/mo →
-        </button>
-        <p className="text-zinc-500 text-[11px] font-medium uppercase tracking-wider mt-4">Was {originalPrice}/mo · Cancel anytime</p>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-const TIER_PRICES: Record<string, number> = {
-  creator: 2000,
-  pro: 5000,
-  studio: 10000,
-};
-
-function applyDiscount(cents: number, pct: number): string {
-  return '$' + ((cents * (100 - pct)) / 100 / 100).toFixed(0);
 }
 
 export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
@@ -141,14 +31,6 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
-
-  // Promo code state
-  const [promoInput, setPromoInput] = useState('');
-  const [promoLoading, setPromoLoading] = useState(false);
-  const [promoApplied, setPromoApplied] = useState<{ code: string; discountPercent: number } | null>(null);
-  const [promoError, setPromoError] = useState<string | null>(null);
-
-  const [claimModal, setClaimModal] = useState<{ tierId: string; tierName: string; originalPrice: string; discountedPrice: string } | null>(null);
 
   const tiers = [
     {
@@ -206,67 +88,22 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
     { id: 'topup_100', credits: 2000, price: '$100' },
   ];
 
-  // 👇 FIXED: Reads directly from Firestore instead of broken backend API 👇
-  const handleApplyPromo = async () => {
-    const code = promoInput.trim().toUpperCase();
-    if (!code) return;
-    
-    setPromoLoading(true);
-    setPromoError(null);
-    setPromoApplied(null);
-    
-    try {
-      const promoRef = doc(db, 'promoCodes', code);
-      const promoSnap = await getDoc(promoRef);
-
-      if (promoSnap.exists()) {
-        const data = promoSnap.data();
-        
-        // Check if active and under usage limit
-        if (data.active && data.usedCount < data.maxUses) {
-          setPromoApplied({ code: promoSnap.id, discountPercent: data.discountPercent });
-          setPromoInput('');
-        } else {
-          setPromoError('Promo code is expired or fully used.');
-        }
-      } else {
-        setPromoError('Invalid promo code.');
-      }
-    } catch (err: any) {
-      console.error("Promo error:", err);
-      setPromoError('Could not validate code. Please try again.');
-    } finally {
-      setPromoLoading(false);
-    }
-  };
-
   const handleUpgrade = (tierId: string) => {
     if (!user) { navigate('/app'); return; }
-
-    if (promoApplied && TIER_PRICES[tierId]) {
-      const tier = tiers.find(t => t.tierId === tierId)!;
-      const discounted = applyDiscount(TIER_PRICES[tierId], promoApplied.discountPercent);
-      setClaimModal({ tierId, tierName: tier.name, originalPrice: tier.basePrice, discountedPrice: discounted });
-      return;
-    }
-
     proceedToCheckout(tierId);
   };
 
   const proceedToCheckout = async (tierId: string) => {
-    setClaimModal(null);
     setLoadingTier(tierId);
     setCheckoutError(null);
     try {
+      const idToken = await user.getIdToken();
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           tier: tierId,
-          userId: user.uid,
-          email: user.email,
           returnUrl: window.location.origin + '/dashboard',
-          promoCode: promoApplied?.code || null,
         }),
       });
 
@@ -317,39 +154,12 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
           </div>
         )}
 
-        {/* Promo Code UI */}
-        <div className="max-w-sm mx-auto mb-12 relative z-20">
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="Promo code" 
-              value={promoInput}
-              onChange={(e) => setPromoInput(e.target.value)}
-              className="flex-1 bg-[#0A0A10] border border-white/10 rounded-full px-5 py-3 text-sm text-white focus:outline-none focus:border-[#FF00C0]/50 transition-colors uppercase"
-            />
-            <button 
-              onClick={handleApplyPromo}
-              disabled={promoLoading || !promoInput.trim()}
-              className="px-6 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-center min-w-[90px]"
-            >
-              {promoLoading ? <Loader2 className="w-4 h-4 animate-spin text-[#FF00C0]" /> : 'Apply'}
-            </button>
-          </div>
-          {promoError && <p className="text-red-400 text-xs mt-3 text-center">{promoError}</p>}
-          {promoApplied && <p className="text-[#00AFFF] text-xs mt-3 text-center">Code <span className="font-bold">{promoApplied.code}</span> applied: {promoApplied.discountPercent}% OFF!</p>}
-        </div>
-
         {/* Tier Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto relative z-10">
           {/* Middle Card Background Glow */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/3 h-[110%] bg-gradient-to-b from-[#FF00C0]/20 to-[#00AFFF]/20 blur-[100px] -z-10 pointer-events-none rounded-full" />
 
-          {tiers.map((tier, idx) => {
-            const discountedPrice = promoApplied
-              ? applyDiscount(TIER_PRICES[tier.tierId], promoApplied.discountPercent)
-              : null;
-
-            return (
+          {tiers.map((tier, idx) => (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -373,23 +183,10 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
                 </div>
 
                 <div className="mb-8">
-                  {discountedPrice ? (
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-5xl font-bold text-white">{discountedPrice}</span>
-                      <span className="text-zinc-500 font-medium text-sm">{tier.period}</span>
-                      <span className="text-zinc-600 line-through text-xl ml-1">{tier.basePrice}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-5xl font-bold text-white">{tier.basePrice}</span>
-                      <span className="text-[#B3B6CB] font-medium text-sm">{tier.period}</span>
-                    </div>
-                  )}
-                  {discountedPrice && (
-                    <p className="text-[#00AFFF] text-xs mt-2 font-medium">
-                      {promoApplied!.discountPercent}% off with {promoApplied!.code}
-                    </p>
-                  )}
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-5xl font-bold text-white">{tier.basePrice}</span>
+                    <span className="text-[#B3B6CB] font-medium text-sm">{tier.period}</span>
+                  </div>
                 </div>
 
                 <ul className="space-y-4 mb-10 flex-1">
@@ -422,8 +219,7 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
                   </button>
                 )}
               </motion.div>
-            );
-          })}
+          ))}
         </div>
 
         {/* Top-ups Section */}
@@ -558,19 +354,6 @@ export default function Pricing({ user, userProfile, onLogout }: PricingProps) {
 
       <Footer />
 
-      {/* Promo claim popup */}
-      <AnimatePresence>
-        {claimModal && promoApplied && (
-          <PromoClaimModal
-            promo={promoApplied}
-            tierName={claimModal.tierName}
-            originalPrice={claimModal.originalPrice}
-            discountedPrice={claimModal.discountedPrice}
-            onClaim={() => proceedToCheckout(claimModal.tierId)}
-            onClose={() => setClaimModal(null)}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

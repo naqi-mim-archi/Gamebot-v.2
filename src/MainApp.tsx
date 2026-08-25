@@ -57,7 +57,13 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const [isListening, setIsListening] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>(initialAttachments);
-  const [files, setFiles] = useState<FileSystem | null>(null);
+  const [files, setFiles] = useState<FileSystem | null>(() => {
+    if (loadGame) return null; // let loadGame effect handle it
+    try {
+      const s = JSON.parse(localStorage.getItem('gb_current_app_session') || 'null');
+      return s?.files || null;
+    } catch { return null; }
+  });
   const [deviceView, setDeviceView] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [leftPanelWidth, setLeftPanelWidth] = useState(33.33);
   const [logs, setLogs] = useState<LogEntry[]>([
@@ -119,6 +125,7 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const sessionGameIdRef = useRef<string | null>(null);
   const TEMP_SESSION_KEY = 'logs_current_session';
+  const SESSION_KEY = 'gb_current_app_session';
 
   // Feature 3: Focus Mode
   const [focusModeActive, setFocusModeActive] = useState(false);
@@ -155,6 +162,19 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
     const toStore = logs.map(l => ({ ...l, timestamp: l.timestamp.toISOString() }));
     localStorage.setItem(key, JSON.stringify(toStore));
   }, [logs]);
+
+  // Persist current game session so page reload restores it
+  useEffect(() => {
+    if (!files) return;
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        files,
+        projectTitle,
+        savedGamePrompt,
+        savedGameId,
+      }));
+    } catch {}
+  }, [files, projectTitle, savedGamePrompt, savedGameId]);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -287,6 +307,29 @@ export default function MainApp({ initialPrompt, initialAttachments = [], loadGa
       setPendingPrompt(initialPrompt);
       setPendingAttachments(initialAttachments);
       setKickoffOpen(true);
+    } else if (!loadGame && !initialPrompt && !initialAttachments.length && !hasRunInitial.current) {
+      // Restore previous session on page reload
+      hasRunInitial.current = true;
+      try {
+        const s = JSON.parse(localStorage.getItem('gb_current_app_session') || 'null');
+        if (s?.files && Object.keys(s.files).length > 0) {
+          if (s.projectTitle) setProjectTitle(s.projectTitle);
+          if (s.savedGamePrompt) setSavedGamePrompt(s.savedGamePrompt);
+          if (s.savedGameId) {
+            setSavedGameId(s.savedGameId);
+            sessionGameIdRef.current = s.savedGameId;
+          }
+          // Restore logs
+          const logKey = s.savedGameId ? `logs_${s.savedGameId}` : TEMP_SESSION_KEY;
+          const storedLogs = localStorage.getItem(logKey);
+          if (storedLogs) {
+            try {
+              const parsed = JSON.parse(storedLogs);
+              setLogs(parsed.map((l: any) => ({ ...l, timestamp: new Date(l.timestamp) })));
+            } catch {}
+          }
+        }
+      } catch {}
     }
   }, [initialPrompt, loadGame, initialAttachments]);
 
